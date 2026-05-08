@@ -378,7 +378,7 @@ html, body {
 /* Map controls */
 #map-controls {
   position: absolute;
-  bottom: 58px;
+  bottom: 14px;
   left: 14px;
   display: flex;
   gap: 6px;
@@ -539,7 +539,7 @@ html, body {
 /* ── Heatmap legend ────────────────────────────────────────────── */
 #heat-legend {
   position: absolute;
-  bottom: 100px;
+  bottom: 52px;
   left: 14px;
   display: flex;
   gap: 14px;
@@ -568,7 +568,7 @@ html, body {
 /* ── Map controls right ────────────────────────────────────────── */
 #map-controls-right {
   position: absolute;
-  bottom: 58px;
+  bottom: 14px;
   right: 14px;
   display: flex;
   gap: 6px;
@@ -621,125 +621,6 @@ html, body {
   height: 56px;
   border-radius: 2px;
 }
-
-/* ── Timeline Playback Bar ─────────────────────────────────────── */
-#tl-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 46px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  background: rgba(5,10,18,0.95);
-  border-top: 1px solid var(--border2);
-  z-index: 5;
-  backdrop-filter: blur(4px);
-}
-
-#tl-btns { display: flex; gap: 4px; flex-shrink: 0; }
-
-.tl-btn {
-  font-size: 14px;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border2);
-  border-radius: 3px;
-  background: rgba(5,12,20,0.88);
-  color: var(--text2);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  flex-shrink: 0;
-  padding: 0;
-  line-height: 1;
-  user-select: none;
-}
-.tl-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-#tl-speeds { display: flex; gap: 3px; flex-shrink: 0; }
-
-.tl-spd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text3);
-  cursor: pointer;
-  transition: all 0.15s;
-  letter-spacing: 0.04em;
-}
-.tl-spd:hover { border-color: var(--border2); color: var(--text2); }
-.tl-spd.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-
-#tl-track-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-#tl-t-start, #tl-t-end {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text3);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-#tl-scrub {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 3px;
-  background: var(--bg3);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  min-width: 0;
-}
-#tl-scrub::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: 2px solid var(--bg);
-  box-shadow: 0 0 6px rgba(0,212,255,0.4);
-}
-#tl-scrub::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: 2px solid var(--bg);
-  box-shadow: 0 0 6px rgba(0,212,255,0.4);
-}
-
-#tl-time {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--accent);
-  letter-spacing: 0.08em;
-  min-width: 120px;
-  text-align: right;
-  flex-shrink: 0;
-}
-#tl-time.tl-live { color: var(--green); }
-
-.tl-inactive #tl-btns,
-.tl-inactive #tl-speeds,
-.tl-inactive #tl-scrub { opacity: 0.5; pointer-events: none; }
-.tl-inactive #tl-time  { color: var(--text2); }
 
 /* ── Theater / Focus mode ──────────────────────────────────────── */
 #left, #right { min-width: 0; }
