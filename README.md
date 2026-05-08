@@ -30,28 +30,28 @@ build step, no API keys required to get started.
 ## Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   GitHub Actions  (hourly cron)                 │
-│                                                                 │
+┌────────────────────────────────────────────────────────────────┐
+│                   GitHub Actions  (hourly cron)                │
+│                                                                │
 │  Feodo Tracker ─────────────────────────────────────────────┐  │
 │  (banking trojan C2 IPs)          has country code          │  │
-│                                                              │  │
-│  OpenPhish ──→ parallel DNS ──────────────────────────────→ │  │
+│                                                             │  │
+│  OpenPhish ──→ parallel DNS ──────────────────────────────  │  │
 │  (phishing URLs)   resolve domains to IPs                   │  │
-│                                                              ▼  │
-│  Blocklist.de ──────────────────────────────────→  ip-api.com  │
+│                                                             ▼  │
+│  Blocklist.de ──────────────────────────────────── ip-api.com  │
 │  (ssh / apache / bots / bruteforce / mail)          batch geo  │
 │                                                      (100/req) │
 │  Emerging Threats ──────────────────────────────────────────┘  │
-│  (compromised hosts)                                            │
-│                                                                 │
+│  (compromised hosts)                                           │
+│                                                                │
 │  AbuseIPDB ── (optional: set ABUSEIPDB_KEY secret)             │
 │  (high-confidence blacklist, categories→types)  ← country      │
-│                         code in response, no geolocation needed │
-│                                                                 │
-│              writes  data/iocs.json                             │
+│                       code in response, no geolocation needed  │
+│                                                                │
+│              writes  data/iocs.json                            │
 │  [{src, tgt, type, ip, family, first_seen}, ...]               │
-└───────────────────────┬─────────────────────────────────────────┘
+└───────────────────────┬────────────────────────────────────────┘
                         │  git commit + push
                         ▼
                ┌─────────────────┐
@@ -60,7 +60,7 @@ build step, no API keys required to get started.
                         │  fetch every 60s (If-Modified-Since)
                         │  → 304 Not Modified = skip, saves bandwidth
                         ▼
-               ┌─────────────────────────────────────────────────┐
+               ┌──────────────────────────────────────────────────┐
                │                    Browser                       │
                │                                                  │
                │  pollRealFeed()                                  │
@@ -68,13 +68,13 @@ build step, no API keys required to get started.
                │   ├── saveHistorySnapshot() → localStorage       │
                │   └── drip 60 events over 55s via spawnAttack()  │
                │           │                                      │
-               │    ┌──────┴──────┐                              │
-               │    ▼             ▼                              │
-               │  map.js       feed.js                           │
-               │  addArc()     addEvent()                        │
-               │  heatmap      feed list + leaderboards          │
-               │  globe/flat   country drawer                    │
-               └─────────────────────────────────────────────────┘
+               │    ┌──────┴──────┐                               │
+               │    ▼             ▼                               │
+               │  map.js       feed.js                            │
+               │  addArc()     addEvent()                         │
+               │  heatmap      feed list + leaderboards           │
+               │  globe/flat   country drawer                     │
+               └──────────────────────────────────────────────────┘
 ```
 
 **Threat types and their sources:**
