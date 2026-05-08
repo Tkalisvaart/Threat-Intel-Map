@@ -117,48 +117,31 @@ def fetch_feodo():
     return events
 
 
-def fetch_threatfox():
-    payload = json.dumps({'query': 'get_iocs', 'days': 1}).encode()
+def fetch_urlhaus():
+    """URLhaus — malware URLs with hosting country, no auth required."""
     req = urllib.request.Request(
-        'https://threatfox-api.abuse.ch/api/v1/',
-        data=payload,
-        headers={'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'},
+        'https://urlhaus-api.abuse.ch/v1/urls/recent/',
+        data=b'limit=200',
+        headers={'Content-Type': 'application/x-www-form-urlencoded',
+                 'User-Agent': 'azimuth-threat-map/1.0'},
         method='POST',
     )
     with urllib.request.urlopen(req, timeout=20) as r:
         data = json.loads(r.read())
 
-    ip_iocs = [
-        ioc for ioc in (data.get('data') or [])
-        if ioc.get('ioc_type') == 'ip:port'
-    ][:80]
-    if not ip_iocs:
-        return []
-
-    ips = [ioc['ioc_value'].split(':')[0] for ioc in ip_iocs]
-    geo_payload = json.dumps([{'query': ip} for ip in ips]).encode()
-    geo_req = urllib.request.Request(
-        'http://ip-api.com/batch',
-        data=geo_payload,
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    with urllib.request.urlopen(geo_req, timeout=20) as r:
-        geo_results = json.loads(r.read())
-
-    country_map = {
-        r['query']: r.get('country')
-        for r in geo_results
-        if r.get('status') == 'success'
-    }
-
     events = []
-    for ioc in ip_iocs:
-        ip  = ioc['ioc_value'].split(':')[0]
-        src = country_map.get(ip)
-        if not src or src not in KNOWN_COUNTRIES:
+    for url in (data.get('urls') or []):
+        cc  = (url.get('country') or '').upper()
+        src = ISO_TO_COUNTRY.get(cc)
+        if not src:
             continue
-        mtype = map_threat_type(ioc.get('threat_type', ''))
+        threat = (url.get('threat') or '').lower()
+        if 'phish' in threat:
+            mtype = 'phishing'
+        elif 'exploit' in threat:
+            mtype = 'exploit'
+        else:
+            mtype = 'malware'
         events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
     return events
 
@@ -174,13 +157,13 @@ def main():
     except Exception as e:
         print(f'  Feodo failed: {e}')
 
-    print('Fetching ThreatFox + ip-api.com...')
+    print('Fetching URLhaus...')
     try:
-        tf = fetch_threatfox()
-        events.extend(tf)
-        print(f'  {len(tf)} events')
+        uh = fetch_urlhaus()
+        events.extend(uh)
+        print(f'  {len(uh)} events')
     except Exception as e:
-        print(f'  ThreatFox failed: {e}')
+        print(f'  URLhaus failed: {e}')
 
     # Shuffle so replay looks varied
     random.shuffle(events)
