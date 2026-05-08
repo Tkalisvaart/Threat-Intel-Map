@@ -171,8 +171,9 @@ def fetch_feodo():
     events = []
     for e, src in mapped:
         mtype = map_malware_type(e.get('malware', ''))
+        ip    = e.get('ip_address', '')
         for _ in range(random.randint(4, 7)):
-            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
+            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip})
     return events
 
 
@@ -242,7 +243,7 @@ def fetch_openphish():
         if src and ip not in seen_ips:
             seen_ips.add(ip)
             for _ in range(random.randint(2, 5)):
-                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing'})
+                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip})
     return events
 
 
@@ -283,7 +284,7 @@ def fetch_blocklist_de():
         src = geo.get(ip)
         if src:
             for _ in range(random.randint(2, 4)):
-                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
+                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip})
     return events
 
 

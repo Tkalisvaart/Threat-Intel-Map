@@ -21,7 +21,7 @@ window.AzimuthFeed = (() => {
 
   /* ── Public: ingest an attack event ───────────────────────── */
   function addEvent(attack) {
-    const ip       = randomIP();
+    const ip       = attack.ip || randomIP();
     const now      = Date.now();
     const typeInfo = TYPES[attack.type];
 
