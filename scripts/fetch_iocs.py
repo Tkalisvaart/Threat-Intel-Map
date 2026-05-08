@@ -99,6 +99,26 @@ def map_threat_type(raw):
     return 'malware'
 
 
+def geolocate_ips(ips):
+    """Batch-geolocate up to 100 IPs via ip-api.com (free, no key)."""
+    if not ips:
+        return {}
+    payload = json.dumps([{'query': ip} for ip in ips[:100]]).encode()
+    req = urllib.request.Request(
+        'http://ip-api.com/batch',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        results = json.loads(r.read())
+    return {
+        r['query']: ISO_TO_COUNTRY.get(r.get('countryCode', ''))
+        for r in results
+        if r.get('status') == 'success'
+    }
+
+
 def fetch_feodo():
     req = urllib.request.Request(
         'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
@@ -106,43 +126,34 @@ def fetch_feodo():
     )
     with urllib.request.urlopen(req, timeout=20) as r:
         entries = json.loads(r.read())
-    events = []
+
+    # Separate entries with / without a known country code
+    mapped, unmapped = [], []
     for e in entries:
         cc  = (e.get('country') or '').upper()
         src = ISO_TO_COUNTRY.get(cc)
-        if not src:
-            continue
-        mtype = map_malware_type(e.get('malware', ''))
-        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
-    return events
+        if src:
+            mapped.append((e, src))
+        elif e.get('ip_address'):
+            unmapped.append(e)
 
-
-def fetch_urlhaus():
-    """URLhaus — malware URLs with hosting country, no auth required."""
-    req = urllib.request.Request(
-        'https://urlhaus-api.abuse.ch/v1/urls/recent/',
-        data=b'limit=200',
-        headers={'Content-Type': 'application/x-www-form-urlencoded',
-                 'User-Agent': 'azimuth-threat-map/1.0'},
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        data = json.loads(r.read())
+    # Geolocate up to 100 entries missing a country
+    if unmapped:
+        try:
+            extra = geolocate_ips([e['ip_address'] for e in unmapped])
+            for e in unmapped:
+                src = extra.get(e['ip_address'])
+                if src:
+                    mapped.append((e, src))
+        except Exception:
+            pass
 
     events = []
-    for url in (data.get('urls') or []):
-        cc  = (url.get('country') or '').upper()
-        src = ISO_TO_COUNTRY.get(cc)
-        if not src:
-            continue
-        threat = (url.get('threat') or '').lower()
-        if 'phish' in threat:
-            mtype = 'phishing'
-        elif 'exploit' in threat:
-            mtype = 'exploit'
-        else:
-            mtype = 'malware'
-        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
+    for e, src in mapped:
+        mtype = map_malware_type(e.get('malware', ''))
+        # Each C2 server controls many victims — emit several events
+        for _ in range(random.randint(4, 7)):
+            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
     return events
 
 
@@ -157,13 +168,7 @@ def main():
     except Exception as e:
         print(f'  Feodo failed: {e}')
 
-    print('Fetching URLhaus...')
-    try:
-        uh = fetch_urlhaus()
-        events.extend(uh)
-        print(f'  {len(uh)} events')
-    except Exception as e:
-        print(f'  URLhaus failed: {e}')
+    # Secondary sources can be added here when auth keys are available
 
     # Shuffle so replay looks varied
     random.shuffle(events)
