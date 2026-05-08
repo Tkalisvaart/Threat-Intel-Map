@@ -742,7 +742,6 @@ html, body { width: 100%; }
 /* ── Search bar ────────────────────────────────────────────────── */
 #search-wrap {
   display: flex;
-  align-items: center;
   gap: 0;
   padding: 5px 10px;
   border-bottom: 1px solid var(--border);
@@ -770,9 +769,11 @@ html, body { width: 100%; }
   border-radius: 0 3px 3px 0;
   color: var(--text3);
   font-size: 11px;
-  padding: 5px 8px;
+  padding: 0 8px;
   cursor: pointer;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: color 0.15s;
 }
 #search-clear:hover { color: var(--accent); }
