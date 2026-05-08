@@ -29,12 +29,9 @@ window.AzimuthMap = (() => {
   let rafId, lastFrame = 0;
   let worldData = null;
   let stars     = null;
-  let _graticule    = null;
-  let _lastGlobeRot = [Infinity, Infinity, Infinity];
-  let _heatOff      = null;
-  let _heatOffCtx   = null;
-  let _lastHeatTs   = 0;
-  let _heatDirty    = false;   // set true to force heatmap rebuild on next draw
+  let _heatOff    = null;
+  let _heatOffCtx = null;
+  let _lastHeatTs = 0;
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -46,7 +43,8 @@ window.AzimuthMap = (() => {
         .scale(Math.min(mapW, mapH) / 1.9)
         .translate([mapW / 2, mapH / 2])
         .rotate(globeRot)
-        .clipAngle(90);
+        .clipAngle(90)
+        .precision(2);
     }
     return d3.geoNaturalEarth1()
       .scale(mapW / 5.0)
@@ -91,7 +89,6 @@ window.AzimuthMap = (() => {
         countries: topojson.feature(world, world.objects.countries),
         borders:   topojson.mesh(world, world.objects.countries, (a, b) => a !== b),
       };
-      _graticule = d3.geoGraticule()();
       renderSVGMap();
     } catch (e) {
       console.error('Map load failed:', e);
@@ -268,7 +265,7 @@ window.AzimuthMap = (() => {
 
   /* ── Main draw loop ─────────────────────────────────────────── */
   function frame(ts) {
-    if (ts - lastFrame > (globeMode ? 50 : 16)) {
+    if (ts - lastFrame > (globeMode ? 33 : 16)) {
       ctx.clearRect(0, 0, mapW, mapH);   // overlay only — bgCanvas persists
 
       if (globeMode) {
@@ -323,9 +320,6 @@ window.AzimuthMap = (() => {
   /* ── Globe background (persistent canvas) ───────────────────── */
   function drawGlobeBg() {
     if (!worldData) return;
-    const rotDelta = Math.abs(globeRot[0] - _lastGlobeRot[0]) +
-                     Math.abs(globeRot[1] - _lastGlobeRot[1]);
-    if (rotDelta < 1.5 && _lastGlobeRot[0] !== Infinity) return;
 
     const { countries, borders } = worldData;
     bgCtx.clearRect(0, 0, mapW, mapH);
@@ -343,14 +337,7 @@ window.AzimuthMap = (() => {
     bgCtx.fillStyle = sg;
     bgCtx.fill();
 
-    // Graticule — use cached object
-    bgCtx.beginPath();
-    _bgCgp(_graticule);
-    bgCtx.strokeStyle = 'rgba(0, 50, 100, 0.55)';
-    bgCtx.lineWidth   = 0.35;
-    bgCtx.stroke();
-
-    // Countries — single batched fill (was 200 individual fills)
+    // Countries — single batched fill
     bgCtx.beginPath();
     countries.features.forEach(f => _bgCgp(f));
     bgCtx.fillStyle = '#0c1e32';
@@ -362,15 +349,12 @@ window.AzimuthMap = (() => {
     bgCtx.strokeStyle = '#183650';
     bgCtx.lineWidth   = 0.4;
     bgCtx.stroke();
-
-    _lastGlobeRot = [...globeRot];
-    _heatDirty    = true;   // globe moved, invalidate heatmap cache
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
   function drawHeat() {
     const now   = performance.now();
-    const stale = _heatDirty || (now - _lastHeatTs > 600);
+    const stale = now - _lastHeatTs > 800;
 
     if (_heatOff && !stale) {
       ctx.drawImage(_heatOff, 0, 0);
@@ -409,7 +393,6 @@ window.AzimuthMap = (() => {
 
     ctx.drawImage(_heatOff, 0, 0);
     _lastHeatTs = now;
-    _heatDirty  = false;
   }
 
   /* ── Arc drawing ─────────────────────────────────────────────── */
@@ -565,7 +548,6 @@ window.AzimuthMap = (() => {
     proj       = makeProj();
     svgGeoPath = d3.geoPath(proj);
     _bgCgp     = d3.geoPath(proj, bgCtx);
-    _lastGlobeRot = [Infinity, Infinity, Infinity];
 
     bgCanvas.style.display = globeMode ? 'block' : 'none';
     document.getElementById('map-container').classList.toggle('globe-mode', globeMode);
@@ -577,7 +559,7 @@ window.AzimuthMap = (() => {
       if (tp) { a.x2 = tp[0]; a.y2 = tp[1]; }
     });
 
-    _heatDirty = true;
+    _heatOff = null;
     return globeMode;
   }
 
@@ -593,7 +575,6 @@ window.AzimuthMap = (() => {
     proj       = makeProj();
     svgGeoPath = d3.geoPath(proj);
     _bgCgp     = d3.geoPath(proj, bgCtx);
-    _lastGlobeRot = [Infinity, Infinity, Infinity];
     _heatOff   = null;
     renderSVGMap();
   }
