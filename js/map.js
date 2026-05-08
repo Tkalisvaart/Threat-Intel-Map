@@ -40,7 +40,7 @@ window.AzimuthMap = (() => {
   function makeProj() {
     if (globeMode) {
       return d3.geoOrthographic()
-        .scale(Math.min(mapW, mapH) / 1.9)
+        .scale(Math.min(mapW, mapH) / 2.3)
         .translate([mapW / 2, mapH / 2])
         .rotate(globeRot)
         .clipAngle(90)
@@ -358,16 +358,20 @@ window.AzimuthMap = (() => {
 
     if (globeMode) {
       // Globe rotates every frame so cached pixel positions are always stale.
-      // Draw directly to the overlay with cheap alpha circles (no gradients).
+      // Draw directly to the overlay with radial gradients for soft glow.
       function blobGlobe(country, count, r, g, b) {
         if (!GEO[country]) return;
         const pt = proj(GEO[country]);
         if (!pt) return;
         const [x, y] = pt;
         const radius = Math.min(52, 10 + count * 2.4);
+        const grad   = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
+        grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
+        grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${r},${g},${b},0.18)`;
+        ctx.fillStyle = grad;
         ctx.fill();
       }
       Object.entries(am).forEach(([c, n]) => blobGlobe(c, n, 255, 51, 85));

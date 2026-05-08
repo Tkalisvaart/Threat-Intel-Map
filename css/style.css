@@ -41,8 +41,8 @@ html, body {
 /* ── App Grid ──────────────────────────────────────────────────── */
 #app {
   display: grid;
-  grid-template-rows: 44px 1fr;
-  grid-template-columns: 260px 1fr 280px;
+  grid-template-rows: 52px 1fr;
+  grid-template-columns: 285px 1fr 305px;
   height: 100vh;
 }
 
@@ -73,7 +73,7 @@ html, body {
 
 #logo-name {
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 800;
   color: #fff;
   letter-spacing: 0.06em;
@@ -81,7 +81,7 @@ html, body {
 }
 
 #logo-sub {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text2);
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -97,7 +97,7 @@ html, body {
 }
 
 .top-stat-val {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--accent);
   font-family: var(--font-mono);
@@ -108,7 +108,7 @@ html, body {
 .top-stat-val.accent-dim { color: var(--text2); }
 
 .top-stat-lbl {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text2);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -133,14 +133,14 @@ html, body {
 }
 
 #live-label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--red);
   letter-spacing: 0.15em;
   text-transform: uppercase;
 }
 
 #clock {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text2);
   margin-left: 16px;
   padding-left: 16px;
@@ -165,7 +165,7 @@ html, body {
 
 .panel-title {
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--text2);
   letter-spacing: 0.14em;
@@ -173,7 +173,7 @@ html, body {
 }
 
 .panel-count {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--accent);
   background: var(--accent-dim);
   padding: 1px 6px;
@@ -224,23 +224,23 @@ html, body {
 }
 
 .fi-type {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 2px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   flex-shrink: 0;
 }
 
-.fi-src  { font-size: 11px; color: #fff; font-weight: 500; }
-.fi-arr  { font-size: 10px; color: var(--text3); }
-.fi-tgt  { font-size: 11px; color: var(--text2); }
-.fi-time { font-size: 9px; color: var(--text3); margin-left: auto; flex-shrink: 0; }
+.fi-src  { font-size: 12px; color: #fff; font-weight: 500; }
+.fi-arr  { font-size: 11px; color: var(--text3); }
+.fi-tgt  { font-size: 12px; color: var(--text2); }
+.fi-time { font-size: 10px; color: var(--text3); margin-left: auto; flex-shrink: 0; }
 
 .fi-bot  { display: flex; align-items: center; gap: 8px; }
-.fi-ip   { font-size: 9px; color: var(--text3); }
-.fi-sev  { font-size: 9px; }
+.fi-ip   { font-size: 10px; color: var(--text3); }
+.fi-sev  { font-size: 10px; }
 
 /* Threat type badge colours */
 .t-malware  { background: rgba(255,51,85,0.2);   color: #ff6688; }
@@ -262,8 +262,8 @@ html, body {
 
 .filter-btn {
   font-family: var(--font-mono);
-  font-size: 9px;
-  padding: 3px 8px;
+  font-size: 10px;
+  padding: 4px 9px;
   border: 1px solid var(--border2);
   border-radius: 3px;
   background: transparent;
@@ -385,8 +385,8 @@ html, body {
 
 .map-btn {
   font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 5px 11px;
+  font-size: 11px;
+  padding: 6px 12px;
   border: 1px solid var(--border2);
   border-radius: 3px;
   background: rgba(5,12,20,0.88);
@@ -450,7 +450,7 @@ html, body {
 .stat-num.purple { color: var(--purple); }
 
 .stat-lbl {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text2);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -471,16 +471,16 @@ html, body {
   padding: 5px 14px;
   border-bottom: 1px solid rgba(13,42,68,0.3);
 }
-.att-rank    { font-size: 9px; color: var(--text3); width: 14px; text-align: right; flex-shrink: 0; }
-.att-flag    { font-size: 13px; width: 20px; flex-shrink: 0; line-height: 1; }
-.att-country { font-size: 11px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-rank    { font-size: 10px; color: var(--text3); width: 14px; text-align: right; flex-shrink: 0; }
+.att-flag    { font-size: 14px; width: 22px; flex-shrink: 0; line-height: 1; }
+.att-country { font-size: 12px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .att-bar-wrap { width: 50px; height: 3px; background: var(--bg3); border-radius: 2px; flex-shrink: 0; }
 .att-bar      { height: 3px; border-radius: 2px; background: var(--red);    transition: width 0.5s ease; }
 .tgt-bar      { height: 3px; border-radius: 2px; background: var(--accent); transition: width 0.5s ease; }
 
-.att-count  { font-size: 10px; color: var(--red);    width: 26px; text-align: right; flex-shrink: 0; }
-.tgt-count  { font-size: 10px; color: var(--accent); width: 26px; text-align: right; flex-shrink: 0; }
+.att-count  { font-size: 11px; color: var(--red);    width: 28px; text-align: right; flex-shrink: 0; }
+.tgt-count  { font-size: 11px; color: var(--accent); width: 28px; text-align: right; flex-shrink: 0; }
 
 /* Panel header variant with sub-label */
 .panel-header-split { justify-content: space-between; }
@@ -503,7 +503,7 @@ html, body {
 }
 
 .breakdown-title {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text2);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -518,10 +518,10 @@ html, body {
   gap: 8px;
   margin-bottom: 6px;
 }
-.bd-label { font-size: 10px; color: var(--text2); width: 68px; flex-shrink: 0; }
+.bd-label { font-size: 11px; color: var(--text2); width: 72px; flex-shrink: 0; }
 .bd-track { flex: 1; height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
 .bd-fill  { height: 3px; width: 0%; border-radius: 2px; transition: width 0.6s ease; }
-.bd-pct   { font-size: 9px; width: 30px; text-align: right; flex-shrink: 0; }
+.bd-pct   { font-size: 10px; width: 32px; text-align: right; flex-shrink: 0; }
 
 .bd-pct.red    { color: var(--red); }
 .bd-pct.amber  { color: var(--amber); }
@@ -606,7 +606,7 @@ html, body {
   flex-shrink: 0;
 }
 .timeline-label {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text2);
   letter-spacing: 0.12em;
   text-transform: uppercase;
