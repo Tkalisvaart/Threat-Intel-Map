@@ -83,13 +83,16 @@ window.AzimuthFeed = (() => {
 
   function renderStats() {
     const rate = perMinute.length;
-    setText('ts-total',    totalCount.toLocaleString());
-    setText('ts-rate',     rate);
-    setText('ts-countries', Object.keys(attackerMap).length);
-    setText('r-critical',  critCount);
-    setText('r-high',      highCount);
-    setText('r-medium',    medCount);
-    setText('r-unique',    uniqueIPs.size);
+    setText('ts-rate',  rate);
+    setText('r-unique', uniqueIPs.size);
+    // When real feed data is loaded, it controls these fields
+    if (!window.AZIMUTH_REALSTATS) {
+      setText('ts-total',     totalCount.toLocaleString());
+      setText('ts-countries', Object.keys(attackerMap).length);
+      setText('r-critical',   critCount);
+      setText('r-high',       highCount);
+      setText('r-medium',     medCount);
+    }
   }
 
   function renderAttackers() {
@@ -127,6 +130,7 @@ window.AzimuthFeed = (() => {
   }
 
   function renderBreakdown() {
+    if (window.AZIMUTH_REALSTATS) return;  // real feed controls breakdown
     const total = Object.values(typeMap).reduce((a, b) => a + b, 0) || 1;
     Object.keys(TYPES).forEach(k => {
       const pct = Math.round((typeMap[k] || 0) / total * 100);

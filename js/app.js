@@ -315,12 +315,61 @@
   // --- REAL CTI FEED ---
   // data/iocs.json is refreshed hourly by GitHub Actions (scripts/fetch_iocs.py).
   // Same-origin fetch — no CORS issues. Falls back to simulation if file is empty.
+
+  function setRealFeedStats(events) {
+    window.AZIMUTH_REALSTATS = true;
+    const { TYPES, GEO } = window.AZIMUTH_DATA;
+    const valid = events.filter(e => GEO[e.src]);
+
+    function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+
+    set('ts-total', valid.length.toLocaleString());
+
+    const srcCountries = new Set(valid.map(e => e.src));
+    set('ts-countries', srcCountries.size);
+
+    let crit = 0, high = 0, med = 0;
+    valid.forEach(e => {
+      const t = TYPES[e.type];
+      if (!t) return;
+      if      (t.severity === 'CRITICAL') crit++;
+      else if (t.severity === 'HIGH')     high++;
+      else                                med++;
+    });
+    set('r-critical', crit);
+    set('r-high',     high);
+    set('r-medium',   med);
+
+    // Global threat level based on critical ratio
+    const sevEl = document.getElementById('ts-severity');
+    if (sevEl) {
+      const ratio = crit / (valid.length || 1);
+      const level = ratio > 0.35 ? 'CRITICAL' : ratio > 0.15 ? 'HIGH' : 'ELEVATED';
+      sevEl.textContent = level;
+      sevEl.className   = 'top-stat-val ' + (level === 'CRITICAL' ? 'red' : level === 'HIGH' ? 'amber' : 'green');
+    }
+
+    // Attack type breakdown from real data
+    const typeMap = {};
+    valid.forEach(e => { if (e.type) typeMap[e.type] = (typeMap[e.type] || 0) + 1; });
+    const total = valid.length || 1;
+    Object.keys(TYPES).forEach(k => {
+      const pct = Math.round((typeMap[k] || 0) / total * 100);
+      const fill  = document.getElementById('bd-' + k);
+      const pctEl = document.getElementById('bpct-' + k);
+      if (fill)  fill.style.width  = pct + '%';
+      if (pctEl) pctEl.textContent = pct + '%';
+    });
+  }
+
   async function pollRealFeed() {
     try {
       const res = await fetch('./data/iocs.json');
       if (!res.ok) { setIntelSource('SIMULATION', false); return; }
       const events = await res.json();
       if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
+
+      setRealFeedStats(events);
 
       const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
       const gap   = Math.max(500, Math.floor(55_000 / batch.length));

@@ -29,6 +29,9 @@ window.AzimuthMap = (() => {
   let _globeOffCtx  = null;   // offscreen canvas 2d context
   let _globeOffCgp  = null;   // d3.geoPath bound to offscreen ctx
   let _lastGlobeRot = [Infinity, Infinity, Infinity];  // rotation at last rebuild
+  let _heatOff      = null;   // offscreen canvas for heatmap
+  let _heatOffCtx   = null;
+  let _lastHeatTs   = 0;      // timestamp of last heatmap render
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -37,13 +40,13 @@ window.AzimuthMap = (() => {
   function makeProj() {
     if (globeMode) {
       return d3.geoOrthographic()
-        .scale(Math.min(mapW, mapH) / 2.08)
+        .scale(Math.min(mapW, mapH) / 1.9)
         .translate([mapW / 2, mapH / 2])
         .rotate(globeRot)
         .clipAngle(90);
     }
     return d3.geoNaturalEarth1()
-      .scale(mapW / 5.8)
+      .scale(mapW / 5.0)
       .translate([mapW / 2, mapH / 2]);
   }
 
@@ -297,7 +300,7 @@ window.AzimuthMap = (() => {
       if (globeMode) {
         // Auto-rotate
         if (autoRotate && !paused && !isDragging) {
-          globeRot[0] += 0.12;
+          globeRot[0] += 0.07;
           proj.rotate(globeRot);
         }
         drawStarfield(ts);
@@ -324,7 +327,7 @@ window.AzimuthMap = (() => {
     const rotDelta   = Math.abs(globeRot[0] - _lastGlobeRot[0]) +
                        Math.abs(globeRot[1] - _lastGlobeRot[1]);
     const needRebuild = !_globeOff || _globeOff.width !== mapW ||
-                        _globeOff.height !== mapH || rotDelta > 0.2;
+                        _globeOff.height !== mapH || rotDelta > 0.5;
 
     if (needRebuild) {
       if (!_globeOff || _globeOff.width !== mapW || _globeOff.height !== mapH) {
@@ -378,10 +381,10 @@ window.AzimuthMap = (() => {
     // Blit cached background to main canvas
     ctx.drawImage(_globeOff, 0, 0);
 
-    // Atmospheric glow — single path, limited shadow, on main canvas
-    const cgpMain = d3.geoPath(proj, ctx);
+    // Atmospheric glow — simple circle (sphere IS a circle in orthographic)
+    // Avoids creating a new d3.geoPath every frame
     ctx.beginPath();
-    cgpMain({ type: 'Sphere' });
+    ctx.arc(mapW / 2, mapH / 2, proj.scale(), 0, Math.PI * 2);
     ctx.shadowColor = 'rgba(0, 180, 255, 0.35)';
     ctx.shadowBlur  = 12;
     ctx.strokeStyle = 'rgba(0, 212, 255, 0.22)';
@@ -389,18 +392,21 @@ window.AzimuthMap = (() => {
     ctx.stroke();
     ctx.shadowBlur  = 0;
 
-    // City dots — main canvas, always at current projection
-    Object.entries(GEO).forEach(([, [lon, lat]]) => {
+    // City dots — two batched passes instead of 65×4 individual draw calls
+    const visPts = [];
+    Object.values(GEO).forEach(([lon, lat]) => {
       const pt = proj([lon, lat]);
-      if (!pt) return;
-      ctx.beginPath();
-      ctx.arc(pt[0], pt[1], 1.8, 0, Math.PI * 2);
-      ctx.fillStyle   = 'rgba(0, 212, 255, 0.22)';
-      ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
-      ctx.lineWidth   = 0.5;
-      ctx.fill();
-      ctx.stroke();
+      if (pt) visPts.push(pt);
     });
+    ctx.fillStyle = 'rgba(0, 212, 255, 0.22)';
+    ctx.beginPath();
+    visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
+    ctx.lineWidth   = 0.5;
+    ctx.beginPath();
+    visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+    ctx.stroke();
   }
 
   /* ── Radar sweep ─────────────────────────────────────────────── */
@@ -439,29 +445,52 @@ window.AzimuthMap = (() => {
   }
 
   /* ── Heatmap ─────────────────────────────────────────────────── */
-  function heatBlob(country, count, r, g, b) {
-    if (!GEO[country]) return;
-    const pt = proj(GEO[country]);
-    if (!pt) return;
-    const [x, y] = pt;
-    const radius = Math.min(52, 10 + count * 2.4);
-    const grad   = ctx.createRadialGradient(x, y, 0, x, y, radius);
-    grad.addColorStop(0,    `rgba(${r},${g},${b},0.34)`);
-    grad.addColorStop(0.4,  `rgba(${r},${g},${b},0.12)`);
-    grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-  }
-
   function drawHeat() {
+    const now = performance.now();
+    // Globe: invalidate when rotation changes; flat: invalidate every 600ms
+    const rotChanged = globeMode && (
+      Math.abs(globeRot[0] - _lastGlobeRot[0]) > 0.5 ||
+      Math.abs(globeRot[1] - _lastGlobeRot[1]) > 0.5
+    );
+    const stale = now - _lastHeatTs > 600;
+
+    if (_heatOff && !rotChanged && !stale) {
+      ctx.drawImage(_heatOff, 0, 0);
+      return;
+    }
+
+    if (!_heatOff || _heatOff.width !== mapW || _heatOff.height !== mapH) {
+      _heatOff    = document.createElement('canvas');
+      _heatOff.width  = mapW;
+      _heatOff.height = mapH;
+      _heatOffCtx = _heatOff.getContext('2d');
+    }
+    const hc = _heatOffCtx;
+    hc.clearRect(0, 0, mapW, mapH);
+
+    function blob(country, count, r, g, b) {
+      if (!GEO[country]) return;
+      const pt = proj(GEO[country]);
+      if (!pt) return;
+      const [x, y] = pt;
+      const radius = Math.min(52, 10 + count * 2.4);
+      const grad   = hc.createRadialGradient(x, y, 0, x, y, radius);
+      grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
+      grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
+      grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      hc.beginPath();
+      hc.arc(x, y, radius, 0, Math.PI * 2);
+      hc.fillStyle = grad;
+      hc.fill();
+    }
+
     const attackerMap = window.AzimuthFeed.getAttackerMap();
     const targetMap   = window.AzimuthFeed.getTargetMap();
-    // Red blobs for attack sources
-    Object.entries(attackerMap).forEach(([c, n]) => heatBlob(c, n, 255, 51, 85));
-    // Cyan blobs for attack targets (layered on top)
-    Object.entries(targetMap).forEach(([c, n])   => heatBlob(c, n, 0, 180, 255));
+    Object.entries(attackerMap).forEach(([c, n]) => blob(c, n, 255, 51, 85));
+    Object.entries(targetMap).forEach(([c, n])   => blob(c, n, 0, 180, 255));
+
+    ctx.drawImage(_heatOff, 0, 0);
+    _lastHeatTs = now;
   }
 
   /* ── Arc drawing ─────────────────────────────────────────────── */
@@ -641,7 +670,8 @@ window.AzimuthMap = (() => {
     canvas.height = mapH;
     proj           = makeProj();
     svgGeoPath     = d3.geoPath(proj);
-    _globeOff      = null;   // force offscreen rebuild at new size
+    _globeOff = null;   // force offscreen rebuild at new size
+    _heatOff  = null;
     renderSVGMap();
   }
 
