@@ -344,21 +344,27 @@
     }
   });
 
-  /* ── Activity chart — per-minute, last 20 min ───────────────── */
+  /* ── Chart helpers ──────────────────────────────────────────── */
   const TYPE_COLORS = { malware:'#ff3355', c2:'#00ff88', exploit:'#ff8844', phishing:'#aa44ff', ddos:'#ffaa00', recon:'#00d4ff' };
   const TYPE_ORDER  = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
 
-  function drawTimeline() {
+  function hexToRgba(hex, a) {
+    return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;
+  }
+
+  /* ── Line chart — per-type activity, last 30 min ────────────── */
+  function drawLineChart() {
     const canvas = document.getElementById('timeline-canvas');
     if (!canvas) return;
     const W = canvas.parentElement.clientWidth - 28;
     if (W <= 0) return;
     canvas.width  = W;
-    canvas.height = 52;
+    canvas.height = 56;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, W, 52);
+    ctx.clearRect(0, 0, W, 56);
 
-    const SLOTS  = 20;
+    const SLOTS  = 30;
+    const CH     = 46;  // chart height; bottom 10px for labels
     const nowMin = Math.floor(Date.now() / 60000);
     const hist   = AzimuthFeed.getMinuteHistory();
     const slots  = [];
@@ -367,40 +373,251 @@
       slots.push(hist.find(b => b.min === min) || { min, count: 0, types: {} });
     }
 
-    const maxCount = Math.max(...slots.map(s => s.count), 1);
-    const barW = W / SLOTS;
-    const H    = 42;  // chart area; bottom 10px reserved for labels
+    const globalMax = Math.max(...slots.flatMap(s => TYPE_ORDER.map(t => s.types[t] || 0)), 1);
+    const step = W / (SLOTS - 1);
 
-    slots.forEach((slot, i) => {
-      if (!slot.count) return;
-      const totalH = Math.max(2, (slot.count / maxCount) * H);
-      let y = H;
-      TYPE_ORDER.forEach(type => {
-        const n = slot.types[type] || 0;
-        if (!n) return;
-        const h = Math.max(1, Math.round((n / slot.count) * totalH));
-        ctx.fillStyle = TYPE_COLORS[type];
-        ctx.fillRect(i * barW + 0.5, y - h, Math.max(1, barW - 1.5), h);
-        y -= h;
+    TYPE_ORDER.forEach(type => {
+      const color = TYPE_COLORS[type];
+      const pts = slots.map((s, i) => ({
+        x: i * step,
+        y: CH - (s.types[type] || 0) / globalMax * CH
+      }));
+
+      // Filled area
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, CH);
+      pts.forEach((p, i) => {
+        if (i === 0) { ctx.lineTo(p.x, p.y); return; }
+        const cpx = step / 3;
+        ctx.bezierCurveTo(pts[i-1].x + cpx, pts[i-1].y, p.x - cpx, p.y, p.x, p.y);
       });
+      ctx.lineTo(pts[pts.length-1].x, CH);
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(color, 0.07);
+      ctx.fill();
+
+      // Line stroke
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        if (i === 0) { ctx.moveTo(p.x, p.y); return; }
+        const cpx = step / 3;
+        ctx.bezierCurveTo(pts[i-1].x + cpx, pts[i-1].y, p.x - cpx, p.y, p.x, p.y);
+      });
+      ctx.strokeStyle = hexToRgba(color, 0.65);
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
     });
 
-    ctx.fillStyle = 'rgba(106,143,170,0.5)';
+    ctx.fillStyle = 'rgba(106,143,170,0.45)';
     ctx.font = '7px JetBrains Mono, monospace';
-    ctx.fillText('20m ago', 0, 52);
+    ctx.fillText('30m', 0, 56);
     ctx.textAlign = 'right';
-    ctx.fillText('now', W, 52);
+    ctx.fillText('now', W, 56);
     ctx.textAlign = 'left';
-    if (maxCount > 1) {
-      ctx.fillStyle = 'rgba(106,143,170,0.35)';
-      ctx.fillText(maxCount + '/min', W, 9);
+    if (globalMax > 1) {
+      ctx.fillStyle = 'rgba(106,143,170,0.3)';
+      ctx.fillText(globalMax, W, 9);
+    }
+  }
+
+  /* ── Bar chart — attack type distribution ───────────────────── */
+  function drawTypeBarChart() {
+    const canvas = document.getElementById('history-canvas');
+    if (!canvas) return;
+    const W = canvas.parentElement.clientWidth - 28;
+    if (W <= 0) return;
+    canvas.width  = W;
+    canvas.height = 56;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, 56);
+
+    const CH  = 44;
+    const n   = TYPE_ORDER.length;
+    const gap = Math.max(2, Math.floor(W * 0.025));
+    const barW = (W - (n - 1) * gap) / n;
+
+    const tm  = window.AZIMUTH_TYPEMAP || AzimuthFeed.getTypeMap();
+    const vals = TYPE_ORDER.map(t => tm[t] || 0);
+    const maxVal = Math.max(...vals, 1);
+
+    if (vals.every(v => v === 0)) {
+      ctx.fillStyle = 'rgba(106,143,170,0.3)';
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.fillText('Collecting…', 2, 28);
+      return;
+    }
+
+    const ABBR = { malware:'MAL', c2:'C2', exploit:'EXP', phishing:'PHI', ddos:'DoS', recon:'RCN' };
+
+    TYPE_ORDER.forEach((type, i) => {
+      const val  = vals[i];
+      const barH = val ? Math.max(2, Math.round((val / maxVal) * CH)) : 0;
+      const x    = Math.round(i * (barW + gap));
+      const color = TYPE_COLORS[type];
+
+      if (barH > 0) {
+        const grad = ctx.createLinearGradient(0, CH - barH, 0, CH);
+        grad.addColorStop(0, hexToRgba(color, 0.88));
+        grad.addColorStop(1, hexToRgba(color, 0.28));
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, CH - barH, barW, barH);
+      }
+
+      ctx.fillStyle = 'rgba(106,143,170,0.55)';
+      ctx.font = '7px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(ABBR[type] || type.slice(0,3).toUpperCase(), x + barW / 2, 56);
+    });
+
+    ctx.textAlign = 'left';
+    if (maxVal > 0) {
+      ctx.fillStyle = 'rgba(106,143,170,0.3)';
+      ctx.font = '7px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(maxVal.toLocaleString(), W, 9);
       ctx.textAlign = 'left';
     }
   }
 
-  setInterval(drawTimeline, 1000);
-  drawTimeline();
-  drawHistory();
+  setInterval(() => { drawLineChart(); drawTypeBarChart(); }, 1000);
+  drawLineChart();
+  drawTypeBarChart();
+
+  /* ── Timeline Playback ──────────────────────────────────────── */
+  const TL = {
+    playing:   false,
+    speed:     1,
+    idx:       -1,
+    events:    [],
+    startMs:   0,
+    endMs:     0,
+    interval:  null,
+    scrubbing: false,
+  };
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function fmtTlTime(ms) {
+    const d = new Date(ms);
+    return `${pad2(d.getUTCMonth()+1)}/${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+  }
+
+  function buildTimeline(events) {
+    const stamped = events
+      .filter(e => e.first_seen)
+      .map(e => ({ ...e, _ts: Date.parse(e.first_seen) }))
+      .filter(e => !isNaN(e._ts))
+      .sort((a, b) => a._ts - b._ts);
+    if (stamped.length < 2) return;
+
+    TL.events  = stamped;
+    TL.startMs = stamped[0]._ts;
+    TL.endMs   = stamped[stamped.length - 1]._ts;
+    TL.idx     = stamped.length - 1;
+
+    const startEl = document.getElementById('tl-t-start');
+    const endEl   = document.getElementById('tl-t-end');
+    if (startEl) startEl.textContent = fmtTlTime(TL.startMs);
+    if (endEl)   endEl.textContent   = fmtTlTime(TL.endMs);
+
+    const bar = document.getElementById('tl-bar');
+    if (bar) bar.classList.remove('tl-inactive');
+    updateTlUI();
+  }
+
+  function tlPlay() {
+    if (!TL.events.length) return;
+    if (TL.interval) clearInterval(TL.interval);
+    TL.playing = true;
+    const btn = document.getElementById('tl-play');
+    if (btn) btn.innerHTML = '&#9208;';
+    const ms = Math.max(50, Math.round(500 / TL.speed));
+    TL.interval = setInterval(() => {
+      if (TL.idx >= TL.events.length - 1) { tlPause(); return; }
+      TL.idx++;
+      spawnAttack(TL.events[TL.idx]);
+      updateTlUI();
+    }, ms);
+  }
+
+  function tlPause() {
+    if (TL.interval) { clearInterval(TL.interval); TL.interval = null; }
+    TL.playing = false;
+    const btn = document.getElementById('tl-play');
+    if (btn) btn.innerHTML = '&#9654;';
+  }
+
+  function updateTlUI() {
+    if (!TL.events.length) return;
+    const scrub  = document.getElementById('tl-scrub');
+    const timeEl = document.getElementById('tl-time');
+    const pct    = Math.round((TL.idx / Math.max(TL.events.length - 1, 1)) * 1000);
+    if (scrub && !TL.scrubbing) scrub.value = pct;
+    if (timeEl) {
+      const isLive = TL.idx >= TL.events.length - 1;
+      if (isLive) {
+        timeEl.textContent = 'LIVE';
+        timeEl.classList.add('tl-live');
+      } else {
+        timeEl.textContent = fmtTlTime(TL.events[TL.idx]._ts);
+        timeEl.classList.remove('tl-live');
+      }
+    }
+  }
+
+  function wireTimeline() {
+    const playBtn = document.getElementById('tl-play');
+    const rwBtn   = document.getElementById('tl-rewind');
+    const ffBtn   = document.getElementById('tl-ff');
+    const scrub   = document.getElementById('tl-scrub');
+    if (!playBtn || !rwBtn || !ffBtn || !scrub) return;
+
+    playBtn.addEventListener('click', () => {
+      if (TL.playing) { tlPause(); return; }
+      if (TL.idx >= TL.events.length - 1) TL.idx = 0;
+      tlPlay();
+    });
+
+    let rwHold = null;
+    function rwStep() { TL.idx = Math.max(0, TL.idx - Math.ceil(TL.speed * 5)); updateTlUI(); }
+    rwBtn.addEventListener('mousedown', () => { rwStep(); rwHold = setInterval(rwStep, 120); });
+    ['mouseup','mouseleave'].forEach(ev => rwBtn.addEventListener(ev, () => {
+      if (rwHold) { clearInterval(rwHold); rwHold = null; }
+    }));
+
+    let ffHold = null;
+    function ffStep() { TL.idx = Math.min(TL.events.length - 1, TL.idx + Math.ceil(TL.speed * 5)); updateTlUI(); }
+    ffBtn.addEventListener('mousedown', () => { ffStep(); ffHold = setInterval(ffStep, 120); });
+    ['mouseup','mouseleave'].forEach(ev => ffBtn.addEventListener(ev, () => {
+      if (ffHold) { clearInterval(ffHold); ffHold = null; }
+    }));
+
+    scrub.addEventListener('mousedown', () => { TL.scrubbing = true; });
+    scrub.addEventListener('input', () => {
+      if (!TL.events.length) return;
+      const wasPlaying = TL.playing;
+      if (wasPlaying) { clearInterval(TL.interval); TL.interval = null; TL.playing = false; }
+      const target = TL.startMs + (scrub.value / 1000) * (TL.endMs - TL.startMs);
+      let idx = TL.events.findIndex(e => e._ts >= target);
+      if (idx < 0) idx = TL.events.length - 1;
+      TL.idx = idx;
+      updateTlUI();
+      if (wasPlaying) tlPlay();
+    });
+    scrub.addEventListener('mouseup',  () => { TL.scrubbing = false; });
+    scrub.addEventListener('change',   () => { TL.scrubbing = false; });
+
+    document.querySelectorAll('.tl-spd').forEach(btn => {
+      btn.addEventListener('click', function() {
+        TL.speed = parseInt(this.dataset.spd, 10);
+        document.querySelectorAll('.tl-spd').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        if (TL.playing) { tlPause(); tlPlay(); }
+      });
+    });
+  }
+
+  wireTimeline();
 
   /* ── Public API (for real CTI feed integration) ─────────────── */
   /**
@@ -471,6 +688,8 @@
       if (pctEl) pctEl.textContent = pct + '%';
     });
 
+    window.AZIMUTH_TYPEMAP = typeMap;
+
     // Intel source breakdown (mapped from family field)
     const blocklistFamilies = new Set(['SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam']);
     window.AZIMUTH_SOURCES = {
@@ -496,58 +715,6 @@
     try { localStorage.setItem(key, JSON.stringify(history)); } catch {}
   }
 
-  function drawHistory() {
-    const canvas = document.getElementById('history-canvas');
-    if (!canvas) return;
-    const W = canvas.parentElement.clientWidth - 28;
-    if (W <= 0) return;
-    canvas.width  = W;
-    canvas.height = 52;
-    const hctx = canvas.getContext('2d');
-    hctx.clearRect(0, 0, W, 52);
-
-    let history = [];
-    try { history = JSON.parse(localStorage.getItem('azimuth_24h') || '[]'); } catch {}
-
-    if (history.length < 1) {
-      hctx.fillStyle = 'rgba(106,143,170,0.3)';
-      hctx.font = '8px JetBrains Mono, monospace';
-      hctx.fillText('Collecting — appears after first hourly refresh', 2, 24);
-      return;
-    }
-
-    const slots    = history.slice(-24);
-    const H        = 42;  // chart area; bottom 10px for labels
-    const barW     = W / Math.max(slots.length, 1);
-    const maxTotal = Math.max(...slots.map(s => s.total), 1);
-
-    slots.forEach((snap, i) => {
-      const barH = Math.max(2, Math.round((snap.total / maxTotal) * H));
-      let y = H;
-      TYPE_ORDER.forEach(type => {
-        const count = snap.byType[type] || 0;
-        if (!count) return;
-        const h = Math.max(1, Math.round((count / snap.total) * barH));
-        hctx.fillStyle = TYPE_COLORS[type];
-        hctx.fillRect(i * barW + 0.5, y - h, Math.max(1, barW - 1.5), h);
-        y -= h;
-      });
-    });
-
-    hctx.fillStyle = 'rgba(106,143,170,0.5)';
-    hctx.font = '7px JetBrains Mono, monospace';
-    if (slots.length > 0) {
-      const d = new Date(slots[0].ts);
-      hctx.fillText(`${d.getHours()}:00`, 0, 52);
-    }
-    hctx.textAlign = 'right';
-    hctx.fillText('now', W, 52);
-    hctx.textAlign = 'left';
-    hctx.fillStyle = 'rgba(106,143,170,0.35)';
-    hctx.fillText(maxTotal.toLocaleString(), W, 9);
-    hctx.textAlign = 'left';
-  }
-
   async function pollRealFeed() {
     try {
       const headers = {};
@@ -567,7 +734,8 @@
       _rawEvents = events;
       setRealFeedStats(events);
       saveHistorySnapshot(events);
-      drawHistory();
+      buildTimeline(events);
+      drawTypeBarChart();
 
       const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
       const gap   = Math.max(500, Math.floor(55_000 / batch.length));

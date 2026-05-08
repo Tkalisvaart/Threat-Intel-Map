@@ -254,8 +254,9 @@ window.AzimuthFeed = (() => {
   }
 
   function getMinuteHistory() { return minuteHistory; }
+  function getTypeMap()      { return { ...typeMap }; }
 
-  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf };
+  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf, getTypeMap };
 })();
 
 document.getElementById('feed-list').addEventListener('click', e => {
