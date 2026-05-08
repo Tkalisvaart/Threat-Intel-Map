@@ -54,27 +54,27 @@ build step, no API keys required to get started.
 └───────────────────────┬─────────────────────────────────────────┘
                         │  git commit + push
                         ▼
-              ┌─────────────────┐
-              │  GitHub Pages   │  (static hosting, auto-deployed)
-              └────────┬────────┘
-                       │  fetch every 60s (If-Modified-Since)
-                       │  → 304 Not Modified = skip, saves bandwidth
-                       ▼
-              ┌─────────────────────────────────────────────────┐
-              │                    Browser                       │
-              │                                                  │
-              │  pollRealFeed()                                  │
-              │   ├── setRealFeedStats()  → right panel stats    │
-              │   ├── saveHistorySnapshot() → localStorage       │
-              │   └── drip 60 events over 55s via spawnAttack()  │
-              │           │                                      │
-              │    ┌──────┴──────┐                              │
-              │    ▼             ▼                              │
-              │  map.js       feed.js                           │
-              │  addArc()     addEvent()                        │
-              │  heatmap      feed list + leaderboards          │
-              │  globe/flat   country drawer                    │
-              └─────────────────────────────────────────────────┘
+               ┌─────────────────┐
+               │  GitHub Pages   │  (static hosting, auto-deployed)
+               └────────┬────────┘
+                        │  fetch every 60s (If-Modified-Since)
+                        │  → 304 Not Modified = skip, saves bandwidth
+                        ▼
+               ┌─────────────────────────────────────────────────┐
+               │                    Browser                       │
+               │                                                  │
+               │  pollRealFeed()                                  │
+               │   ├── setRealFeedStats()  → right panel stats    │
+               │   ├── saveHistorySnapshot() → localStorage       │
+               │   └── drip 60 events over 55s via spawnAttack()  │
+               │           │                                      │
+               │    ┌──────┴──────┐                              │
+               │    ▼             ▼                              │
+               │  map.js       feed.js                           │
+               │  addArc()     addEvent()                        │
+               │  heatmap      feed list + leaderboards          │
+               │  globe/flat   country drawer                    │
+               └─────────────────────────────────────────────────┘
 ```
 
 **Threat types and their sources:**

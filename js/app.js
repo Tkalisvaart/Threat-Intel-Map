@@ -416,6 +416,9 @@
     const srcCountries = new Set(valid.map(e => e.src));
     set('ts-countries', srcCountries.size);
 
+    const uniqueIPSet = new Set(valid.filter(e => e.ip).map(e => e.ip));
+    set('r-unique', uniqueIPSet.size.toLocaleString());
+
     let crit = 0, high = 0, med = 0;
     valid.forEach(e => {
       const t = TYPES[e.type];

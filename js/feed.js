@@ -169,7 +169,7 @@ window.AzimuthFeed = (() => {
   /* ── Queries ─────────────────────────────────────────────────── */
   function getCountryStats(country) {
     const out      = attackerMap[country] || 0;
-    const inCount  = feedItems.filter(f => f.tgt === country).length;
+    const inCount  = targetMap[country] || 0;
     const srcTypes = feedItems.filter(f => f.src === country).map(f => f.type);
     const topThreat = srcTypes.length
       ? TYPES[srcTypes.sort((a, b) => srcTypes.filter(v => v === b).length - srcTypes.filter(v => v === a).length)[0]].label

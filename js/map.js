@@ -477,7 +477,7 @@ window.AzimuthMap = (() => {
       // arc rises into space and returns to surface at the target.
       const interp  = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
       const cx = mapW / 2, cy = mapH / 2;
-      const MAX_LIFT = 0.35;
+      const MAX_LIFT = 0.18;
       for (let i = 0; i <= N; i++) {
         const t  = progress * i / N;
         const pt = proj(interp(t));
