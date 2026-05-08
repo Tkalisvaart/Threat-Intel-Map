@@ -253,20 +253,22 @@ window.AzimuthMap = (() => {
     }));
   }
 
-  function drawStarfield(ts) {
+  function drawStarfield() {
+    ctx.fillStyle   = '#ffffff';
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
     stars.forEach(s => {
-      ctx.globalAlpha = Math.max(0, s.baseA + Math.sin(ts * s.twinkle + s.phase) * 0.18);
-      ctx.beginPath();
-      ctx.arc(s.x * mapW, s.y * mapH, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
+      const x = s.x * mapW, y = s.y * mapH;
+      ctx.moveTo(x + s.r, y);
+      ctx.arc(x, y, s.r, 0, Math.PI * 2);
     });
+    ctx.fill();
     ctx.globalAlpha = 1;
   }
 
   /* ── Main draw loop ─────────────────────────────────────────── */
   function frame(ts) {
-    if (ts - lastFrame > (globeMode ? 33 : 16)) {
+    if (ts - lastFrame > (globeMode ? 50 : 16)) {
       ctx.clearRect(0, 0, mapW, mapH);   // overlay only — bgCanvas persists
 
       if (globeMode) {
@@ -275,18 +277,21 @@ window.AzimuthMap = (() => {
           proj.rotate(globeRot);
         }
 
-        drawStarfield(ts);
+        drawStarfield();
         drawGlobeBg();   // updates bgCanvas only when rotation changes enough
 
-        // Atmosphere glow on overlay — simple arc, no geoPath creation
+        // Atmosphere glow — two arcs, no shadowBlur
+        const sc = proj.scale();
         ctx.beginPath();
-        ctx.arc(mapW / 2, mapH / 2, proj.scale(), 0, Math.PI * 2);
-        ctx.shadowColor = 'rgba(0, 180, 255, 0.35)';
-        ctx.shadowBlur  = 12;
-        ctx.strokeStyle = 'rgba(0, 212, 255, 0.22)';
-        ctx.lineWidth   = 1.8;
+        ctx.arc(mapW / 2, mapH / 2, sc + 6, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 180, 255, 0.07)';
+        ctx.lineWidth   = 12;
         ctx.stroke();
-        ctx.shadowBlur  = 0;
+        ctx.beginPath();
+        ctx.arc(mapW / 2, mapH / 2, sc, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.28)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
 
         // City dots — two batched passes (fill, then stroke)
         const visPts = [];
@@ -320,7 +325,7 @@ window.AzimuthMap = (() => {
     if (!worldData) return;
     const rotDelta = Math.abs(globeRot[0] - _lastGlobeRot[0]) +
                      Math.abs(globeRot[1] - _lastGlobeRot[1]);
-    if (rotDelta < 0.5 && _lastGlobeRot[0] !== Infinity) return;
+    if (rotDelta < 1.5 && _lastGlobeRot[0] !== Infinity) return;
 
     const { countries, borders } = worldData;
     bgCtx.clearRect(0, 0, mapW, mapH);
@@ -473,32 +478,33 @@ window.AzimuthMap = (() => {
     ctx.lineWidth   = globeMode ? 2 : 3;
     ctx.stroke();
 
-    // Core gradient
-    const lg = ctx.createLinearGradient(x1, y1, ex, ey);
-    lg.addColorStop(0,   color + '14');
-    lg.addColorStop(0.4, color + '55');
-    lg.addColorStop(0.8, color + 'bb');
-    lg.addColorStop(1,   color + 'ff');
+    // Core line — skip gradient in globe mode
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = lg;
-    ctx.lineWidth   = 1.5;
+    if (globeMode) {
+      ctx.strokeStyle = color + 'cc';
+    } else {
+      const lg = ctx.createLinearGradient(x1, y1, ex, ey);
+      lg.addColorStop(0,   color + '14');
+      lg.addColorStop(0.4, color + '55');
+      lg.addColorStop(0.8, color + 'bb');
+      lg.addColorStop(1,   color + 'ff');
+      ctx.strokeStyle = lg;
+    }
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Moving head
+    // Moving head — concentric alpha circles, no shadowBlur
     if (progress < 1) {
-      ctx.beginPath();
-      ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle   = '#ffffff';
-      ctx.shadowColor = color;
-      ctx.shadowBlur  = 14;
-      ctx.fill();
-      ctx.shadowBlur  = 0;
-      ctx.beginPath();
-      ctx.arc(ex, ey, 2, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, 8,   0, Math.PI * 2);
+      ctx.fillStyle = color + '1f'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, 5,   0, Math.PI * 2);
+      ctx.fillStyle = color + '40'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, 2,   0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
     }
 
     if (progress >= 0.97 && !arc.impacted) {
@@ -519,8 +525,6 @@ window.AzimuthMap = (() => {
       p.vx *= 0.93; p.vy *= 0.93;
       ctx.save();
       ctx.globalAlpha = life * 0.85;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur  = 8;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * life, 0, Math.PI * 2);
       ctx.fillStyle = p.color;
