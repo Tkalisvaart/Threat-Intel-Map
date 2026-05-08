@@ -633,8 +633,8 @@ html, body {
   align-items: center;
   gap: 10px;
   padding: 0 14px;
-  background: rgba(2,4,8,0.92);
-  border-top: 1px solid var(--border);
+  background: rgba(5,10,18,0.95);
+  border-top: 1px solid var(--border2);
   z-index: 5;
   backdrop-filter: blur(4px);
 }
@@ -738,8 +738,8 @@ html, body {
 
 .tl-inactive #tl-btns,
 .tl-inactive #tl-speeds,
-.tl-inactive #tl-scrub { opacity: 0.3; pointer-events: none; }
-.tl-inactive #tl-time  { color: var(--text3); }
+.tl-inactive #tl-scrub { opacity: 0.5; pointer-events: none; }
+.tl-inactive #tl-time  { color: var(--text2); }
 
 /* ── Theater / Focus mode ──────────────────────────────────────── */
 #left, #right { min-width: 0; }
