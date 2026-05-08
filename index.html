@@ -44,6 +44,14 @@
         <span class="top-stat-val red" id="ts-severity">CRITICAL</span>
         <span class="top-stat-lbl">Global Threat Level</span>
       </div>
+      <div class="top-stat" id="intel-source-stat">
+        <span class="top-stat-val" id="ts-source">—</span>
+        <span class="top-stat-lbl">Intel Source</span>
+      </div>
+      <div class="top-stat">
+        <span class="top-stat-val accent-dim" id="ts-uptime">00:00:00</span>
+        <span class="top-stat-lbl">Session</span>
+      </div>
 
       <div id="live-indicator">
         <div id="live-dot"></div>
@@ -125,8 +133,17 @@
         </div>
       </div>
 
-      <div class="panel-header"><span class="panel-title">Top Attackers</span></div>
+      <div class="panel-header panel-header-split">
+        <span class="panel-title">Top Attackers</span>
+        <span class="panel-title-sub">outbound</span>
+      </div>
       <div id="attackers"></div>
+
+      <div class="panel-header panel-header-split">
+        <span class="panel-title">Top Targets</span>
+        <span class="panel-title-sub">inbound</span>
+      </div>
+      <div id="targets"></div>
 
       <div id="timeline-wrap">
         <div class="timeline-label">Attack Rate — 60s</div>

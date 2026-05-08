@@ -256,7 +256,7 @@ window.AzimuthMap = (() => {
   }
 
   function addPulseRing(x, y, color) {
-    pulseRings.push({ x, y, color, born: Date.now(), ttl: 1400 });
+    pulseRings.push({ x, y, color, born: Date.now(), ttl: 750 });
   }
 
   /* ── Stars (globe mode only) ─────────────────────────────────── */
@@ -285,7 +285,7 @@ window.AzimuthMap = (() => {
 
   /* ── Draw loop ───────────────────────────────────────────────── */
   function frame(ts) {
-    if (ts - lastFrame > 14) {
+    if (ts - lastFrame > (globeMode ? 33 : 16)) {
       ctx.clearRect(0, 0, mapW, mapH);
 
       if (globeMode) {
@@ -455,11 +455,10 @@ window.AzimuthMap = (() => {
     const dist = Math.hypot(x2 - x1, y2 - y1);
     if (dist < 3) return;
 
-    // Bezier control point — lifts the arc "above" the map surface
     const cx  = (x1 + x2) / 2;
     const cy  = Math.min(y1, y2) - dist * 0.24 - 16;
 
-    const STEPS  = 80;
+    const STEPS  = 40;
     const nSteps = Math.round(progress * STEPS);
     const pts    = [];
     for (let i = 0; i <= nSteps; i++) {
@@ -476,98 +475,54 @@ window.AzimuthMap = (() => {
     ctx.save();
     ctx.globalAlpha = fade;
 
-    // ── Layer 1: Wide bloom ──────────────────────────────────────
+    // Layer 1: wide bloom — no shadowBlur (expensive), pure alpha
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '1a';
-    ctx.lineWidth   = 9;
-    ctx.shadowColor = color;
-    ctx.shadowBlur  = 22;
+    ctx.strokeStyle = color + '18';
+    ctx.lineWidth   = 8;
     ctx.stroke();
 
-    // ── Layer 2: Mid glow ────────────────────────────────────────
+    // Layer 2: mid glow
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '44';
-    ctx.lineWidth   = 3.5;
-    ctx.shadowBlur  = 12;
+    ctx.strokeStyle = color + '3a';
+    ctx.lineWidth   = 3;
     ctx.stroke();
 
-    // ── Layer 3: Core line with gradient ─────────────────────────
+    // Layer 3: core gradient line
     const lineGrad = ctx.createLinearGradient(x1, y1, ex, ey);
     lineGrad.addColorStop(0,    color + '14');
-    lineGrad.addColorStop(0.35, color + '55');
-    lineGrad.addColorStop(0.75, color + 'bb');
+    lineGrad.addColorStop(0.4,  color + '55');
+    lineGrad.addColorStop(0.8,  color + 'bb');
     lineGrad.addColorStop(1,    color + 'ff');
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.strokeStyle = lineGrad;
-    ctx.lineWidth   = 1.6;
-    ctx.shadowBlur  = 7;
+    ctx.lineWidth   = 1.5;
     ctx.stroke();
-    ctx.shadowBlur  = 0;
 
-    // ── Moving head ──────────────────────────────────────────────
+    // Moving head — shadow only on this small dot
     if (progress < 1) {
-      // Outer ring pulse
-      ctx.beginPath();
-      ctx.arc(ex, ey, 6.5, 0, Math.PI * 2);
-      ctx.strokeStyle = color + '50';
-      ctx.lineWidth   = 1;
-      ctx.stroke();
-
-      // White core
       ctx.beginPath();
       ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
       ctx.fillStyle   = '#ffffff';
       ctx.shadowColor = color;
-      ctx.shadowBlur  = 22;
+      ctx.shadowBlur  = 14;
       ctx.fill();
       ctx.shadowBlur  = 0;
-
-      // Colored inner dot
       ctx.beginPath();
       ctx.arc(ex, ey, 2, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
     }
 
-    // ── Arrival: reticle + crosshair ─────────────────────────────
-    if (progress >= 0.97) {
-      if (!arc.impacted) {
-        arc.impacted = true;
-        spawnParticles(x2, y2, arc.color);
-        addPulseRing(x2, y2, arc.color);
-        spawnImpactRing(x2, y2, arc.color);
-      }
-
-      const rProg = Math.min(1, (progress - 0.97) / 0.055);
-      const r     = 5 + rProg * 22;
-
-      ctx.globalAlpha = fade * (1 - rProg) * 0.85;
-      ctx.beginPath();
-      ctx.arc(x2, y2, r, 0, Math.PI * 2);
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 1.5;
-      ctx.shadowColor = color;
-      ctx.shadowBlur  = 10;
-      ctx.stroke();
-      ctx.shadowBlur  = 0;
-
-      // Crosshair ticks
-      const tickLen = r * 0.45;
-      ctx.globalAlpha = fade * (1 - rProg) * 0.6;
-      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx, dy]) => {
-        ctx.beginPath();
-        ctx.moveTo(x2 + dx * (r + 2),             y2 + dy * (r + 2));
-        ctx.lineTo(x2 + dx * (r + 2 + tickLen),   y2 + dy * (r + 2 + tickLen));
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = 1.2;
-        ctx.stroke();
-      });
+    // Arrival — single clean expanding ring, no crosshair/particles
+    if (progress >= 0.97 && !arc.impacted) {
+      arc.impacted = true;
+      addPulseRing(x2, y2, arc.color);
     }
 
     ctx.restore();
@@ -599,15 +554,13 @@ window.AzimuthMap = (() => {
     pulseRings = pulseRings.filter(r => (now - r.born) < r.ttl);
     pulseRings.forEach(r => {
       const life   = 1 - (now - r.born) / r.ttl;
-      const radius = 4 + (1 - life) * 45;
+      const radius = 2 + (1 - life) * 15;
       ctx.save();
-      ctx.globalAlpha  = life * 0.45;
-      ctx.shadowColor  = r.color;
-      ctx.shadowBlur   = 12;
+      ctx.globalAlpha = life * 0.9;
       ctx.beginPath();
       ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
       ctx.strokeStyle = r.color;
-      ctx.lineWidth   = 1.5;
+      ctx.lineWidth   = 1.2;
       ctx.stroke();
       ctx.restore();
     });

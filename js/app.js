@@ -11,14 +11,31 @@
   let theater  = false;
   let simTimer = null;
 
-  /* ── Clock ──────────────────────────────────────────────────── */
+  /* ── Clock + Session uptime ─────────────────────────────────── */
+  const sessionStart = Date.now();
+
   function tickClock() {
     const d   = new Date();
     const utc = d.toUTCString().split(' ');
     document.getElementById('clock').textContent = utc[4] + ' UTC';
+
+    const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+    const hh = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+    const ss = String(elapsed % 60).padStart(2, '0');
+    const el = document.getElementById('ts-uptime');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
   }
   tickClock();
   setInterval(tickClock, 1000);
+
+  /* ── Intel source badge ─────────────────────────────────────── */
+  function setIntelSource(label, live) {
+    const el  = document.getElementById('ts-source');
+    const box = document.getElementById('intel-source-stat');
+    if (el)  el.textContent = label;
+    if (box) box.classList.toggle('source-live', live);
+  }
 
   /* ── Map init ───────────────────────────────────────────────── */
   await AzimuthMap.init();
@@ -301,18 +318,19 @@
   async function pollRealFeed() {
     try {
       const res = await fetch('./data/iocs.json');
-      if (!res.ok) return;
+      if (!res.ok) { setIntelSource('SIMULATION', false); return; }
       const events = await res.json();
-      if (!Array.isArray(events) || events.length === 0) return;
+      if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
 
       const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
       const gap   = Math.max(500, Math.floor(55_000 / batch.length));
       batch.forEach((ev, i) => {
         setTimeout(() => { if (!paused) spawnAttack(ev); }, i * gap);
       });
+      setIntelSource('LIVE INTEL', true);
       console.log(`[Threat Intel] ${events.length} events loaded`);
     } catch (_) {
-      // File not yet generated — simulation continues
+      setIntelSource('SIMULATION', false);
     }
   }
 

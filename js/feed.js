@@ -9,6 +9,7 @@ window.AzimuthFeed = (() => {
 
   let feedItems   = [];
   let attackerMap = {};  // country → count (outbound)
+  let targetMap   = {};  // country → count (inbound)
   let typeMap     = {};  // type → count
   let uniqueIPs   = new Set();
   let critCount   = 0;
@@ -26,6 +27,7 @@ window.AzimuthFeed = (() => {
 
     totalCount++;
     attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
+    targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
     typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
     uniqueIPs.add(ip);
 
@@ -42,6 +44,7 @@ window.AzimuthFeed = (() => {
     renderFeed();
     renderStats();
     renderAttackers();
+    renderTargets();
     renderBreakdown();
   }
 
@@ -90,7 +93,7 @@ window.AzimuthFeed = (() => {
   }
 
   function renderAttackers() {
-    const sorted = Object.entries(attackerMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const sorted = Object.entries(attackerMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
     const max    = sorted[0] ? sorted[0][1] : 1;
 
     document.getElementById('attackers').innerHTML = sorted.map(([country, count], i) => `
@@ -102,6 +105,24 @@ window.AzimuthFeed = (() => {
           <div class="att-bar" style="width:${Math.round(count / max * 100)}%"></div>
         </div>
         <span class="att-count">${count}</span>
+      </div>`).join('');
+  }
+
+  function renderTargets() {
+    const el = document.getElementById('targets');
+    if (!el) return;
+    const sorted = Object.entries(targetMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const max    = sorted[0] ? sorted[0][1] : 1;
+
+    el.innerHTML = sorted.map(([country, count], i) => `
+      <div class="attacker-row">
+        <span class="att-rank">${i + 1}</span>
+        <span class="att-flag">${FLAGS[country] || '🌐'}</span>
+        <span class="att-country">${country}</span>
+        <div class="att-bar-wrap">
+          <div class="att-bar tgt-bar" style="width:${Math.round(count / max * 100)}%"></div>
+        </div>
+        <span class="att-count tgt-count">${count}</span>
       </div>`).join('');
   }
 
@@ -162,5 +183,5 @@ window.AzimuthFeed = (() => {
     if (el) el.textContent = val;
   }
 
-  return { addEvent, setFilter, getCountryStats, getAttackerMap, getAllEvents, getTimeline };
+  return { addEvent, setFilter, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap };
 })();
