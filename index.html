@@ -46,7 +46,41 @@
       </div>
       <div class="top-stat" id="intel-source-stat">
         <span class="top-stat-val" id="ts-source">—</span>
-        <span class="top-stat-lbl">Intel Source</span>
+        <span class="top-stat-lbl">Intel Source ↓</span>
+        <div id="intel-popup">
+          <div class="ip-title">Intel Sources</div>
+          <div class="ip-row" id="ipr-feodo">
+            <span class="ip-dot"></span>
+            <span class="ip-name">Feodo Tracker</span>
+            <span class="ip-tag">C2</span>
+            <span class="ip-count inactive" id="ipc-feodo">—</span>
+          </div>
+          <div class="ip-row" id="ipr-openphish">
+            <span class="ip-dot"></span>
+            <span class="ip-name">OpenPhish</span>
+            <span class="ip-tag">Phishing</span>
+            <span class="ip-count inactive" id="ipc-openphish">—</span>
+          </div>
+          <div class="ip-row" id="ipr-blocklist">
+            <span class="ip-dot"></span>
+            <span class="ip-name">Blocklist.de</span>
+            <span class="ip-tag">Multi</span>
+            <span class="ip-count inactive" id="ipc-blocklist">—</span>
+          </div>
+          <div class="ip-row" id="ipr-emergingthreats">
+            <span class="ip-dot"></span>
+            <span class="ip-name">Emerging Threats</span>
+            <span class="ip-tag">Malware</span>
+            <span class="ip-count inactive" id="ipc-emergingthreats">—</span>
+          </div>
+          <div class="ip-row" id="ipr-abuseipdb">
+            <span class="ip-dot"></span>
+            <span class="ip-name">AbuseIPDB</span>
+            <span class="ip-tag">Multi</span>
+            <span class="ip-count inactive" id="ipc-abuseipdb">—</span>
+          </div>
+          <div class="ip-updated" id="ipc-updated"></div>
+        </div>
       </div>
       <div class="top-stat">
         <span class="top-stat-val accent-dim" id="ts-uptime">00:00:00</span>
@@ -115,7 +149,6 @@
         <button class="map-btn" id="btn-globe" title="Toggle Globe / Map (G)">Globe</button>
         <button class="map-btn" id="btn-fs" title="Fullscreen (F)">Full</button>
         <button class="map-btn" id="btn-theater" title="Focus mode — hide panels (T)">Focus</button>
-        <button class="map-btn" id="btn-export" title="Export PNG snapshot (E)">Export</button>
         <button class="map-btn" id="btn-csv" title="Export CSV feed (X)">CSV</button>
       </div>
 
@@ -194,9 +227,9 @@
       <div id="targets"></div>
 
       <div id="timeline-wrap">
-        <div class="timeline-label">Attack Rate — 60s</div>
+        <div class="timeline-label">Activity — last 20 min</div>
         <canvas id="timeline-canvas"></canvas>
-        <div class="timeline-label" style="margin-top:10px">Attack History — 24h</div>
+        <div class="timeline-label" style="margin-top:12px">Daily History — 24h</div>
         <canvas id="history-canvas"></canvas>
       </div>
 
@@ -247,7 +280,6 @@
         <kbd>C</kbd><span>Clear arcs</span>
         <kbd>H</kbd><span>Toggle heatmap</span>
         <kbd>A</kbd><span>Toggle arcs</span>
-        <kbd>E</kbd><span>Export PNG snapshot</span>
         <kbd>X</kbd><span>Export CSV feed</span>
         <kbd>?</kbd><span>This help screen</span>
         <kbd>Esc</kbd><span>Close / exit fullscreen</span>

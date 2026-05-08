@@ -139,50 +139,6 @@
 
   document.getElementById('btn-theater').addEventListener('click', toggleTheater);
 
-  /* ── Export PNG ─────────────────────────────────────────────── */
-  async function exportPNG() {
-    const btn = document.getElementById('btn-export');
-    btn.textContent = 'Saving…';
-    btn.disabled = true;
-
-    try {
-      const svgEl     = document.getElementById('world-svg');
-      const mapCanvas = document.getElementById('map-canvas');
-      const svgData   = new XMLSerializer().serializeToString(svgEl);
-      const blob      = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url       = URL.createObjectURL(blob);
-
-      await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          const off = document.createElement('canvas');
-          off.width  = mapCanvas.width;
-          off.height = mapCanvas.height;
-          const c = off.getContext('2d');
-          c.fillStyle = '#020408';
-          c.fillRect(0, 0, off.width, off.height);
-          c.drawImage(img, 0, 0);
-          c.drawImage(mapCanvas, 0, 0);
-          const a = document.createElement('a');
-          a.download = `azimuth-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
-          a.href = off.toDataURL('image/png');
-          a.click();
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        img.onerror = () => { URL.revokeObjectURL(url); reject(); };
-        img.src = url;
-      });
-    } catch (e) {
-      console.warn('Export failed:', e);
-    }
-
-    btn.textContent = 'Export';
-    btn.disabled = false;
-  }
-
-  document.getElementById('btn-export').addEventListener('click', exportPNG);
-
   /* ── Export CSV ─────────────────────────────────────────────── */
   function exportCSV() {
     const { TYPES } = window.AZIMUTH_DATA;
@@ -283,6 +239,60 @@
     AzimuthFeed.setSearch('');
   });
 
+  /* ── Intel source popup ─────────────────────────────────────── */
+  const intelStat  = document.getElementById('intel-source-stat');
+  const intelPopup = document.getElementById('intel-popup');
+
+  function updateIntelPopup() {
+    const s = window.AZIMUTH_SOURCES;
+    const feeds = [
+      { key: 'feodo',           label: 'Feodo Tracker'   },
+      { key: 'openphish',       label: 'OpenPhish'        },
+      { key: 'blocklist',       label: 'Blocklist.de'     },
+      { key: 'emergingthreats', label: 'Emerging Threats' },
+      { key: 'abuseipdb',       label: 'AbuseIPDB'        },
+    ];
+
+    if (!s) {
+      feeds.forEach(({ key }) => {
+        const el  = document.getElementById('ipc-' + key);
+        const row = document.getElementById('ipr-' + key);
+        if (el)  { el.textContent = '—'; el.className = 'ip-count inactive'; }
+        if (row) row.querySelector('.ip-dot').classList.remove('active');
+      });
+      const upd = document.getElementById('ipc-updated');
+      if (upd) upd.textContent = 'Simulation mode — no live data loaded';
+      return;
+    }
+
+    feeds.forEach(({ key }) => {
+      const count = s[key] || 0;
+      const el    = document.getElementById('ipc-' + key);
+      const row   = document.getElementById('ipr-' + key);
+      const dot   = row && row.querySelector('.ip-dot');
+      if (el) {
+        el.textContent = count > 0 ? count.toLocaleString() + ' events' : 'inactive';
+        el.className   = 'ip-count' + (count === 0 ? ' inactive' : '');
+      }
+      if (dot) dot.classList.toggle('active', count > 0);
+    });
+
+    const upd = document.getElementById('ipc-updated');
+    if (upd && s.updatedAt) {
+      const d  = new Date(s.updatedAt);
+      const hm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`;
+      upd.textContent = 'Data refreshed: ' + hm;
+    }
+  }
+
+  intelStat.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = intelPopup.classList.toggle('open');
+    if (isOpen) updateIntelPopup();
+  });
+
+  document.addEventListener('click', () => intelPopup.classList.remove('open'));
+
   /* ── Keyboard Shortcuts Modal ───────────────────────────────── */
   const modal = document.getElementById('shortcuts-modal');
 
@@ -321,9 +331,6 @@
       case 'a':
         document.getElementById('btn-arcs').click();
         break;
-      case 'e':
-        exportPNG();
-        break;
       case 'x':
         exportCSV();
         break;
@@ -337,46 +344,58 @@
     }
   });
 
-  /* ── Timeline sparkline ─────────────────────────────────────── */
+  /* ── Activity chart — per-minute, last 20 min ───────────────── */
+  const TYPE_COLORS = { malware:'#ff3355', c2:'#00ff88', exploit:'#ff8844', phishing:'#aa44ff', ddos:'#ffaa00', recon:'#00d4ff' };
+  const TYPE_ORDER  = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
+
   function drawTimeline() {
     const canvas = document.getElementById('timeline-canvas');
     if (!canvas) return;
     const W = canvas.parentElement.clientWidth - 28;
     if (W <= 0) return;
     canvas.width  = W;
-    canvas.height = 44;
+    canvas.height = 52;
     const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, 52);
 
-    const data   = AzimuthFeed.getTimeline(60);
-    const maxVal = Math.max(...data, 1);
-    const barW   = W / 60;
-    const H      = 44;
+    const SLOTS  = 20;
+    const nowMin = Math.floor(Date.now() / 60000);
+    const hist   = AzimuthFeed.getMinuteHistory();
+    const slots  = [];
+    for (let i = SLOTS - 1; i >= 0; i--) {
+      const min = nowMin - i;
+      slots.push(hist.find(b => b.min === min) || { min, count: 0, types: {} });
+    }
 
-    // Subtle grid lines
-    ctx.strokeStyle = 'rgba(13, 42, 68, 0.7)';
-    ctx.lineWidth   = 0.5;
-    [H * 0.33, H * 0.66].forEach(y => {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
+    const maxCount = Math.max(...slots.map(s => s.count), 1);
+    const barW = W / SLOTS;
+    const H    = 42;  // chart area; bottom 10px reserved for labels
+
+    slots.forEach((slot, i) => {
+      if (!slot.count) return;
+      const totalH = Math.max(2, (slot.count / maxCount) * H);
+      let y = H;
+      TYPE_ORDER.forEach(type => {
+        const n = slot.types[type] || 0;
+        if (!n) return;
+        const h = Math.max(1, Math.round((n / slot.count) * totalH));
+        ctx.fillStyle = TYPE_COLORS[type];
+        ctx.fillRect(i * barW + 0.5, y - h, Math.max(1, barW - 1.5), h);
+        y -= h;
+      });
     });
 
-    data.forEach((val, i) => {
-      if (!val) return;
-      const bh    = Math.max(2, (val / maxVal) * (H - 6));
-      const alpha = 0.25 + (i / 59) * 0.75;  // dim → bright left → right
-      ctx.fillStyle = `rgba(0, 212, 255, ${alpha.toFixed(2)})`;
-      ctx.fillRect(i * barW + 0.5, H - bh, Math.max(1, barW - 1.5), bh);
-    });
-
-    // Time axis labels
-    ctx.fillStyle = 'rgba(106, 143, 170, 0.55)';
-    ctx.font      = '7px JetBrains Mono, monospace';
-    ctx.fillText('60s ago', 0, H - 1);
+    ctx.fillStyle = 'rgba(106,143,170,0.5)';
+    ctx.font = '7px JetBrains Mono, monospace';
+    ctx.fillText('20m ago', 0, 52);
     ctx.textAlign = 'right';
-    ctx.fillText('now', W, H - 1);
+    ctx.fillText('now', W, 52);
     ctx.textAlign = 'left';
+    if (maxCount > 1) {
+      ctx.fillStyle = 'rgba(106,143,170,0.35)';
+      ctx.fillText(maxCount + '/min', W, 9);
+      ctx.textAlign = 'left';
+    }
   }
 
   setInterval(drawTimeline, 1000);
@@ -451,6 +470,17 @@
       if (fill)  fill.style.width  = pct + '%';
       if (pctEl) pctEl.textContent = pct + '%';
     });
+
+    // Intel source breakdown (mapped from family field)
+    const blocklistFamilies = new Set(['SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam']);
+    window.AZIMUTH_SOURCES = {
+      feodo:          valid.filter(e => e.type === 'c2' && (e.family || '') !== 'AbuseIPDB').length,
+      openphish:      valid.filter(e => e.family === 'Phishing Site').length,
+      blocklist:      valid.filter(e => blocklistFamilies.has(e.family || '')).length,
+      emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
+      abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
+      updatedAt:      _dataLastModified,
+    };
   }
 
   function saveHistorySnapshot(events) {
@@ -472,9 +502,9 @@
     const W = canvas.parentElement.clientWidth - 28;
     if (W <= 0) return;
     canvas.width  = W;
-    canvas.height = 28;
+    canvas.height = 52;
     const hctx = canvas.getContext('2d');
-    hctx.clearRect(0, 0, W, 28);
+    hctx.clearRect(0, 0, W, 52);
 
     let history = [];
     try { history = JSON.parse(localStorage.getItem('azimuth_24h') || '[]'); } catch {}
@@ -482,23 +512,23 @@
     if (history.length < 1) {
       hctx.fillStyle = 'rgba(106,143,170,0.3)';
       hctx.font = '8px JetBrains Mono, monospace';
-      hctx.fillText('Collecting — data appears after first hourly fetch', 2, 17);
+      hctx.fillText('Collecting — appears after first hourly refresh', 2, 24);
       return;
     }
 
-    const typeColors = { malware:'#ff3355', c2:'#00ff88', exploit:'#ff8844', phishing:'#aa44ff', ddos:'#ffaa00', recon:'#00d4ff' };
-    const slots = history.slice(-24);
-    const barW  = W / Math.max(slots.length, 1);
+    const slots    = history.slice(-24);
+    const H        = 42;  // chart area; bottom 10px for labels
+    const barW     = W / Math.max(slots.length, 1);
+    const maxTotal = Math.max(...slots.map(s => s.total), 1);
 
     slots.forEach((snap, i) => {
-      const total = Object.values(snap.byType).reduce((a, b) => a + b, 0) || 1;
-      let y = 28;
-      const typeOrder = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
-      typeOrder.forEach(type => {
+      const barH = Math.max(2, Math.round((snap.total / maxTotal) * H));
+      let y = H;
+      TYPE_ORDER.forEach(type => {
         const count = snap.byType[type] || 0;
         if (!count) return;
-        const h = Math.max(1, Math.round((count / total) * 28));
-        hctx.fillStyle = typeColors[type] || '#444';
+        const h = Math.max(1, Math.round((count / snap.total) * barH));
+        hctx.fillStyle = TYPE_COLORS[type];
         hctx.fillRect(i * barW + 0.5, y - h, Math.max(1, barW - 1.5), h);
         y -= h;
       });
@@ -508,10 +538,13 @@
     hctx.font = '7px JetBrains Mono, monospace';
     if (slots.length > 0) {
       const d = new Date(slots[0].ts);
-      hctx.fillText(d.getHours() + ':00', 0, 27);
+      hctx.fillText(`${d.getHours()}:00`, 0, 52);
     }
     hctx.textAlign = 'right';
-    hctx.fillText('now', W, 27);
+    hctx.fillText('now', W, 52);
+    hctx.textAlign = 'left';
+    hctx.fillStyle = 'rgba(106,143,170,0.35)';
+    hctx.fillText(maxTotal.toLocaleString(), W, 9);
     hctx.textAlign = 'left';
   }
 

@@ -7,16 +7,17 @@ window.AzimuthFeed = (() => {
 
   const MAX_FEED = 80;
 
-  let feedItems   = [];
-  let attackerMap = {};  // country → count (outbound)
-  let targetMap   = {};  // country → count (inbound)
-  let typeMap     = {};  // type → count
-  let uniqueIPs   = new Set();
-  let critCount   = 0;
-  let highCount   = 0;
-  let medCount    = 0;
-  let totalCount  = 0;
-  let perMinute   = [];  // timestamps for rate calc
+  let feedItems    = [];
+  let attackerMap  = {};  // country → count (outbound)
+  let targetMap    = {};  // country → count (inbound)
+  let typeMap      = {};  // type → count
+  let uniqueIPs    = new Set();
+  let critCount    = 0;
+  let highCount    = 0;
+  let medCount     = 0;
+  let totalCount   = 0;
+  let perMinute    = [];  // timestamps for rate calc
+  let minuteHistory = []; // [{min, count, types:{}}] — last 30 minutes
   let activeFilter = 'all';
   let activeSearch = '';
 
@@ -38,6 +39,16 @@ window.AzimuthFeed = (() => {
 
     perMinute.push(now);
     perMinute = perMinute.filter(t => now - t < 60_000);
+
+    const minKey = Math.floor(now / 60000);
+    const lastBucket = minuteHistory[minuteHistory.length - 1];
+    if (lastBucket && lastBucket.min === minKey) {
+      lastBucket.count++;
+      lastBucket.types[attack.type] = (lastBucket.types[attack.type] || 0) + 1;
+    } else {
+      minuteHistory.push({ min: minKey, count: 1, types: { [attack.type]: 1 } });
+      if (minuteHistory.length > 30) minuteHistory.shift();
+    }
 
     feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), severity: typeInfo.severity, family: attack.family || '', first_seen: attack.first_seen || '' });
     if (feedItems.length > MAX_FEED) feedItems.pop();
@@ -242,7 +253,9 @@ window.AzimuthFeed = (() => {
     return counts;
   }
 
-  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf };
+  function getMinuteHistory() { return minuteHistory; }
+
+  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf };
 })();
 
 document.getElementById('feed-list').addEventListener('click', e => {

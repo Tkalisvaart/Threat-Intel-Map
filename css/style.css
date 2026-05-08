@@ -105,6 +105,7 @@ html, body {
 }
 .top-stat-val.red       { color: var(--red); }
 .top-stat-val.amber     { color: var(--amber); }
+.top-stat-val.green     { color: var(--green); }
 .top-stat-val.accent-dim { color: var(--text2); }
 
 .top-stat-lbl {
@@ -617,7 +618,7 @@ html, body {
 #timeline-canvas {
   display: block;
   width: 100%;
-  height: 44px;
+  height: 52px;
   border-radius: 2px;
 }
 
@@ -804,8 +805,67 @@ html, body { width: 100%; }
 #history-canvas {
   display: block;
   width: 100%;
-  height: 28px;
+  height: 52px;
   border-radius: 2px;
+}
+
+/* ── Intel source popup ───────────────────────────────────────── */
+#intel-source-stat {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+#intel-source-stat:hover .top-stat-lbl { color: var(--accent2); }
+
+#intel-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 10px);
+  left: -10px;
+  width: 290px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 14px 16px;
+  z-index: 200;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,212,255,0.06);
+}
+#intel-popup.open { display: block; }
+
+.ip-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: 10px;
+  font-family: var(--font-display);
+}
+.ip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ip-row:last-of-type { border-bottom: none; }
+.ip-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+  flex-shrink: 0;
+}
+.ip-dot.active { background: var(--green); box-shadow: 0 0 5px var(--green); }
+.ip-name { font-size: 11px; color: var(--text); flex: 1; }
+.ip-tag  { font-size: 10px; color: var(--text2); width: 56px; flex-shrink: 0; }
+.ip-count { font-size: 11px; font-weight: 700; color: var(--accent); }
+.ip-count.inactive { color: var(--text3); font-weight: 400; }
+.ip-updated {
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: 10px;
+  text-align: right;
+  letter-spacing: 0.04em;
 }
 
 /* ── Country detail drawer ────────────────────────────────────── */
