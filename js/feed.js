@@ -121,7 +121,7 @@ window.AzimuthFeed = (() => {
   }
 
   function renderAttackers() {
-    const sorted = Object.entries(attackerMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const sorted = Object.entries(attackerMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const max    = sorted[0] ? sorted[0][1] : 1;
 
     document.getElementById('attackers').innerHTML = sorted.map(([country, count], i) => `
@@ -139,7 +139,7 @@ window.AzimuthFeed = (() => {
   function renderTargets() {
     const el = document.getElementById('targets');
     if (!el) return;
-    const sorted = Object.entries(targetMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const sorted = Object.entries(targetMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const max    = sorted[0] ? sorted[0][1] : 1;
 
     el.innerHTML = sorted.map(([country, count], i) => `
