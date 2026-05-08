@@ -12,6 +12,7 @@
   let simTimer = null;
 
   let _dataLastModified = null;
+  let _rawEvents = [];  // full dataset from last successful iocs.json load
 
   /* ── Clock + Session uptime ─────────────────────────────────── */
   const sessionStart = Date.now();
@@ -184,11 +185,13 @@
 
   /* ── Export CSV ─────────────────────────────────────────────── */
   function exportCSV() {
-    const items  = AzimuthFeed.getAllEvents();
-    const header = 'Timestamp,Source,Target,Type,IP,Severity\n';
-    const rows   = items.map(e =>
-      `${e.time},${e.src},${e.tgt},${e.type},${e.ip},${e.severity}`
-    ).join('\n');
+    const { TYPES } = window.AZIMUTH_DATA;
+    const items  = _rawEvents.length ? _rawEvents : AzimuthFeed.getAllEvents();
+    const header = 'Source,Target,Type,Severity,IP,Family,FirstSeen\n';
+    const rows   = items.map(e => {
+      const sev = TYPES[e.type] ? TYPES[e.type].severity : '';
+      return `${e.src},${e.tgt},${e.type},${sev},${e.ip || ''},${e.family || ''},${e.first_seen || ''}`;
+    }).join('\n');
     const blobUrl = URL.createObjectURL(
       new Blob([header + rows], { type: 'text/csv' })
     );
@@ -525,6 +528,7 @@
       const events = await res.json();
       if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
 
+      _rawEvents = events;
       setRealFeedStats(events);
       saveHistorySnapshot(events);
       drawHistory();
