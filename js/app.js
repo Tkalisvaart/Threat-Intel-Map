@@ -1,9 +1,9 @@
 /**
- * app.js — Sentinel main orchestration
+ * app.js — Azimuth main orchestration
  */
 
 (async () => {
-  const { TYPES, GEO, SCENARIOS } = window.SENTINEL_DATA;
+  const { TYPES, GEO, SCENARIOS } = window.AZIMUTH_DATA;
 
   let paused   = false;
   let showArcs = true;
@@ -21,7 +21,7 @@
   setInterval(tickClock, 1000);
 
   /* ── Map init ───────────────────────────────────────────────── */
-  await SentinelMap.init();
+  await AzimuthMap.init();
 
   /* ── Spawn an attack ────────────────────────────────────────── */
   function spawnAttack(scenario) {
@@ -30,8 +30,8 @@
     if (!GEO[s.src] || !GEO[s.tgt]) return;
 
     const attack = { ...s, color: typeInfo.color };
-    SentinelFeed.addEvent(attack);
-    SentinelMap.addArc(attack);
+    AzimuthFeed.addEvent(attack);
+    AzimuthMap.addArc(attack);
   }
 
   /* ── Simulation loop ────────────────────────────────────────── */
@@ -54,31 +54,31 @@
     if (!btn) return;
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    SentinelFeed.setFilter(btn.dataset.f);
+    AzimuthFeed.setFilter(btn.dataset.f);
   });
 
   /* ── Map control buttons ────────────────────────────────────── */
   document.getElementById('btn-arcs').addEventListener('click', function () {
     showArcs = !showArcs;
     this.classList.toggle('active', showArcs);
-    SentinelMap.setShowArcs(showArcs);
+    AzimuthMap.setShowArcs(showArcs);
   });
 
   document.getElementById('btn-heat').addEventListener('click', function () {
     showHeat = !showHeat;
     this.classList.toggle('active', showHeat);
-    SentinelMap.setShowHeat(showHeat);
+    AzimuthMap.setShowHeat(showHeat);
   });
 
   document.getElementById('btn-pause').addEventListener('click', function () {
     paused = !paused;
     this.classList.toggle('active', paused);
     this.textContent = paused ? 'Resume' : 'Pause';
-    SentinelMap.setPaused(paused);
+    AzimuthMap.setPaused(paused);
   });
 
   document.getElementById('btn-clear').addEventListener('click', () => {
-    SentinelMap.clearArcs();
+    AzimuthMap.clearArcs();
   });
 
   /* ── Fullscreen ─────────────────────────────────────────────── */
@@ -101,7 +101,7 @@
 
   /* ── Globe / Map toggle ────────────────────────────────────── */
   document.getElementById('btn-globe').addEventListener('click', function () {
-    const isGlobe = SentinelMap.toggleGlobe();
+    const isGlobe = AzimuthMap.toggleGlobe();
     this.textContent = isGlobe ? 'Flat Map' : 'Globe';
     this.classList.toggle('active', isGlobe);
   });
@@ -114,7 +114,7 @@
     btn.textContent = theater ? 'Exit Focus' : 'Focus';
     btn.classList.toggle('active', theater);
     // Give the map a moment to re-measure after layout shift
-    setTimeout(() => SentinelMap.resize(), 320);
+    setTimeout(() => AzimuthMap.resize(), 320);
   }
 
   document.getElementById('btn-theater').addEventListener('click', toggleTheater);
@@ -144,7 +144,7 @@
           c.drawImage(img, 0, 0);
           c.drawImage(mapCanvas, 0, 0);
           const a = document.createElement('a');
-          a.download = `sentinel-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+          a.download = `azimuth-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
           a.href = off.toDataURL('image/png');
           a.click();
           URL.revokeObjectURL(url);
@@ -165,7 +165,7 @@
 
   /* ── Export CSV ─────────────────────────────────────────────── */
   function exportCSV() {
-    const items  = SentinelFeed.getAllEvents();
+    const items  = AzimuthFeed.getAllEvents();
     const header = 'Timestamp,Source,Target,Type,IP,Severity\n';
     const rows   = items.map(e =>
       `${e.time},${e.src},${e.tgt},${e.type},${e.ip},${e.severity}`
@@ -174,7 +174,7 @@
       new Blob([header + rows], { type: 'text/csv' })
     );
     const a = document.createElement('a');
-    a.download = `sentinel-feed-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `azimuth-feed-${new Date().toISOString().slice(0, 10)}.csv`;
     a.href = blobUrl;
     a.click();
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
@@ -246,7 +246,7 @@
     canvas.height = 44;
     const ctx = canvas.getContext('2d');
 
-    const data   = SentinelFeed.getTimeline(60);
+    const data   = AzimuthFeed.getTimeline(60);
     const maxVal = Math.max(...data, 1);
     const barW   = W / 60;
     const H      = 44;
@@ -283,16 +283,16 @@
 
   /* ── Public API (for real CTI feed integration) ─────────────── */
   /**
-   * window.Sentinel.ingest({ src, tgt, type })
+   * window.Azimuth.ingest({ src, tgt, type })
    * Call this from your own polling loop to inject real attack events.
-   * src/tgt must match keys in SENTINEL_DATA.GEO.
+   * src/tgt must match keys in AZIMUTH_DATA.GEO.
    * type: malware | ddos | phishing | recon | c2 | exploit
    */
-  window.Sentinel = {
+  window.Azimuth = {
     ingest: spawnAttack,
-    pause:  () => { paused = true;  SentinelMap.setPaused(true);  },
-    resume: () => { paused = false; SentinelMap.setPaused(false); },
-    clear:  () => SentinelMap.clearArcs(),
+    pause:  () => { paused = true;  AzimuthMap.setPaused(true);  },
+    resume: () => { paused = false; AzimuthMap.setPaused(false); },
+    clear:  () => AzimuthMap.clearArcs(),
   };
 
   // --- REAL CTI FEED ---

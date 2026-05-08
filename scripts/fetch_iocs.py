@@ -102,7 +102,7 @@ def map_threat_type(raw):
 def fetch_feodo():
     req = urllib.request.Request(
         'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
-        headers={'User-Agent': 'sentinel-threat-map/1.0'},
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
     )
     with urllib.request.urlopen(req, timeout=20) as r:
         entries = json.loads(r.read())
@@ -122,7 +122,7 @@ def fetch_threatfox():
     req = urllib.request.Request(
         'https://threatfox-api.abuse.ch/api/v1/',
         data=payload,
-        headers={'Content-Type': 'application/json', 'User-Agent': 'sentinel-threat-map/1.0'},
+        headers={'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'},
         method='POST',
     )
     with urllib.request.urlopen(req, timeout=20) as r:

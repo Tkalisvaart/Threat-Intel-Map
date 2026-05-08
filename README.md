@@ -1,4 +1,4 @@
-# Sentinel — Cyber Threat Intelligence Map
+# Azimuth — Cyber Threat Intelligence Map
 
 A real-time threat intelligence visualization dashboard powered by live Abuse.ch ThreatFox data.
 No build step required.
@@ -69,24 +69,24 @@ Returns the latest batch of geolocated threat events, ready to ingest.
 
 ## Public JavaScript API
 
-The frontend exposes `window.Sentinel` for injecting events programmatically.
+The frontend exposes `window.Azimuth` for injecting events programmatically.
 
 ```javascript
 // Inject a single event
-window.Sentinel.ingest({ src: 'China', tgt: 'United States', type: 'malware' });
+window.Azimuth.ingest({ src: 'China', tgt: 'United States', type: 'malware' });
 
 // Playback controls
-window.Sentinel.pause();
-window.Sentinel.resume();
-window.Sentinel.clear();   // remove all arcs from the map
+window.Azimuth.pause();
+window.Azimuth.resume();
+window.Azimuth.clear();   // remove all arcs from the map
 ```
 
-`src` and `tgt` must match keys in `SENTINEL_DATA.GEO` (`js/data.js`).
+`src` and `tgt` must match keys in `AZIMUTH_DATA.GEO` (`js/data.js`).
 Unknown countries are silently dropped.
 
 ### Connecting a different feed
 
-Poll any CTI source and call `Sentinel.ingest()` for each event:
+Poll any CTI source and call `Azimuth.ingest()` for each event:
 
 ```javascript
 // Example: AlienVault OTX
@@ -98,7 +98,7 @@ async function pollOTX() {
   });
   const data = await res.json();
   // extract indicators, geolocate, then:
-  window.Sentinel.ingest({ src: 'Russia', tgt: 'Germany', type: 'phishing' });
+  window.Azimuth.ingest({ src: 'Russia', tgt: 'Germany', type: 'phishing' });
 }
 
 setInterval(pollOTX, 60_000);
@@ -119,7 +119,7 @@ async function checkIP(ip) {
 ## File Structure
 
 ```
-sentinel/
+azimuth/
 ├── index.html                    # App shell + layout
 ├── serve.py                      # Dev server + /api/iocs proxy
 ├── css/

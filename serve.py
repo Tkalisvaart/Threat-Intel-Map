@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sentinel dev server.
+Azimuth dev server.
 Serves static files AND proxies ThreatFox + IP geolocation so the
 browser never hits CORS walls.
 
@@ -122,7 +122,7 @@ def get_iocs():
         return _cache['data']
 
 
-class SentinelHandler(SimpleHTTPRequestHandler):
+class AzimuthHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.split('?')[0] == '/api/iocs':
             events = get_iocs()
@@ -140,5 +140,5 @@ class SentinelHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    print('Sentinel server → http://localhost:8080')
-    HTTPServer(('0.0.0.0', 8080), SentinelHandler).serve_forever()
+    print('Azimuth server → http://localhost:8080')
+    HTTPServer(('0.0.0.0', 8080), AzimuthHandler).serve_forever()

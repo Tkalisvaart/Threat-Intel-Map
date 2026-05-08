@@ -2,8 +2,8 @@
  * feed.js — Attack feed, statistics, and leaderboard rendering
  */
 
-window.SentinelFeed = (() => {
-  const { TYPES, FLAGS } = window.SENTINEL_DATA;
+window.AzimuthFeed = (() => {
+  const { TYPES, FLAGS } = window.AZIMUTH_DATA;
 
   const MAX_FEED = 80;
 

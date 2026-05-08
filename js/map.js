@@ -2,8 +2,8 @@
  * map.js — World map rendering: D3 Natural Earth + Orthographic Globe + Canvas FX
  */
 
-window.SentinelMap = (() => {
-  const { GEO } = window.SENTINEL_DATA;
+window.AzimuthMap = (() => {
+  const { GEO } = window.AZIMUTH_DATA;
 
   let proj, svgGeoPath;
   let canvas, ctx;
@@ -183,7 +183,7 @@ window.SentinelMap = (() => {
       }
 
       if (found) {
-        const s = window.SentinelFeed.getCountryStats(found);
+        const s = window.AzimuthFeed.getCountryStats(found);
         document.getElementById('tt-country').textContent = found;
         document.getElementById('tt-out').textContent     = s.out;
         document.getElementById('tt-in').textContent      = s.in;
@@ -407,7 +407,7 @@ window.SentinelMap = (() => {
 
   /* ── Heatmap ─────────────────────────────────────────────────── */
   function drawHeat() {
-    const attackerMap = window.SentinelFeed.getAttackerMap();
+    const attackerMap = window.AzimuthFeed.getAttackerMap();
     Object.entries(attackerMap).forEach(([country, count]) => {
       if (!GEO[country]) return;
       const pt = proj(GEO[country]);

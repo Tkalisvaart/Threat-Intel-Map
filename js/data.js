@@ -1,4 +1,4 @@
-window.SENTINEL_DATA = {
+window.AZIMUTH_DATA = {
 
   TYPES: {
     malware:  { label: 'Malware',  color: '#ff3355', cls: 't-malware',  severity: 'CRITICAL' },
