@@ -367,7 +367,7 @@
 
   async function pollRealFeed() {
     try {
-      const res = await fetch('./data/iocs.json');
+      const res = await fetch('./data/iocs.json', { cache: 'no-store' });
       if (!res.ok) { setIntelSource('SIMULATION', false); return; }
       const events = await res.json();
       if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
