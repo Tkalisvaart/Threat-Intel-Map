@@ -321,6 +321,9 @@
     const { TYPES, GEO } = window.AZIMUTH_DATA;
     const valid = events.filter(e => GEO[e.src]);
 
+    // Pre-populate heatmap + leaderboards immediately from real data
+    AzimuthFeed.ingestBatch(valid);
+
     function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 
     set('ts-total', valid.length.toLocaleString());

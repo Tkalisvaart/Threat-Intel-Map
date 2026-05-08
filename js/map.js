@@ -1,37 +1,40 @@
 /**
  * map.js — World map rendering: D3 Natural Earth + Orthographic Globe + Canvas FX
+ *
+ * Dual-canvas design:
+ *   #map-bg  (bgCanvas) — persistent globe background, only redrawn when rotation changes
+ *   #map-canvas (canvas) — overlay: arcs, heatmap, stars, effects — cleared every frame
+ * This avoids cross-canvas drawImage() on the hot path.
  */
 
 window.AzimuthMap = (() => {
   const { GEO } = window.AZIMUTH_DATA;
 
   let proj, svgGeoPath;
-  let canvas, ctx;
+  let bgCanvas, bgCtx, _bgCgp;   // persistent globe bg
+  let canvas, ctx;                // overlay: cleared every frame
   let mapW, mapH;
-  let arcs      = [];
-  let particles = [];
+  let arcs       = [];
+  let particles  = [];
   let pulseRings = [];
-  let showArcs  = true;
-  let showHeat  = true;
-  let paused    = false;
-  let globeMode = false;
-  let globeRot  = [0, -25, 0];
+  let showArcs   = true;
+  let showHeat   = true;
+  let paused     = false;
+  let globeMode  = false;
+  let globeRot   = [0, -25, 0];
   let autoRotate = false;
   let isDragging = false;
   let dragStart  = null;
   let autoRotTimer = null;
   let rafId, lastFrame = 0;
   let worldData = null;
-  let stars = null;
-  let radarAngle = 0;
-  let _graticule    = null;   // cached geoGraticule()() object
-  let _globeOff     = null;   // offscreen canvas element
-  let _globeOffCtx  = null;   // offscreen canvas 2d context
-  let _globeOffCgp  = null;   // d3.geoPath bound to offscreen ctx
-  let _lastGlobeRot = [Infinity, Infinity, Infinity];  // rotation at last rebuild
-  let _heatOff      = null;   // offscreen canvas for heatmap
+  let stars     = null;
+  let _graticule    = null;
+  let _lastGlobeRot = [Infinity, Infinity, Infinity];
+  let _heatOff      = null;
   let _heatOffCtx   = null;
-  let _lastHeatTs   = 0;      // timestamp of last heatmap render
+  let _lastHeatTs   = 0;
+  let _heatDirty    = false;   // set true to force heatmap rebuild on next draw
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -56,6 +59,11 @@ window.AzimuthMap = (() => {
     mapW = container.clientWidth;
     mapH = container.clientHeight;
 
+    bgCanvas        = document.getElementById('map-bg');
+    bgCanvas.width  = mapW;
+    bgCanvas.height = mapH;
+    bgCtx = bgCanvas.getContext('2d');
+
     canvas        = document.getElementById('map-canvas');
     canvas.width  = mapW;
     canvas.height = mapH;
@@ -63,6 +71,7 @@ window.AzimuthMap = (() => {
 
     proj       = makeProj();
     svgGeoPath = d3.geoPath(proj);
+    _bgCgp     = d3.geoPath(proj, bgCtx);
 
     initStars();
     await loadWorldMap();
@@ -73,7 +82,7 @@ window.AzimuthMap = (() => {
     rafId = requestAnimationFrame(frame);
   }
 
-  /* ── World data load ────────────────────────────────────────── */
+  /* ── World data ─────────────────────────────────────────────── */
   async function loadWorldMap() {
     try {
       const res   = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
@@ -89,16 +98,13 @@ window.AzimuthMap = (() => {
     }
   }
 
-  /* ── SVG flat map (clears and redraws) ──────────────────────── */
+  /* ── SVG flat map ───────────────────────────────────────────── */
   function renderSVGMap() {
     const svg = document.getElementById('world-svg');
     svg.innerHTML = '';
     svg.setAttribute('viewBox', `0 0 ${mapW} ${mapH}`);
 
-    if (globeMode || !worldData) {
-      svg.style.display = 'none';
-      return;
-    }
+    if (globeMode || !worldData) { svg.style.display = 'none'; return; }
     svg.style.display = '';
 
     const { countries, borders } = worldData;
@@ -217,73 +223,39 @@ window.AzimuthMap = (() => {
     const tgtPt = proj(tgtGeo);
 
     if (arcs.length >= MAX_ARCS) arcs.shift();
-
     arcs.push({
       srcName: attack.src, tgtName: attack.tgt,
       srcGeo, tgtGeo,
       x1: srcPt ? srcPt[0] : 0, y1: srcPt ? srcPt[1] : 0,
       x2: tgtPt ? tgtPt[0] : 0, y2: tgtPt ? tgtPt[1] : 0,
-      color:    attack.color,
-      progress: 0,
-      speed:    0.006 + Math.random() * 0.007,
-      born:     Date.now(),
-      ttl:      4500 + Math.random() * 3000,
+      color: attack.color, progress: 0,
+      speed: 0.006 + Math.random() * 0.007,
+      born: Date.now(), ttl: 4500 + Math.random() * 3000,
       impacted: false,
     });
 
-    // Highlight source city dot
     const dot = document.querySelector(`.city-dot[data-country="${attack.src}"]`);
     if (dot) { dot.classList.add('hot'); setTimeout(() => dot.classList.remove('hot'), 2200); }
-  }
-
-  /* ── Spawn effects ──────────────────────────────────────────── */
-  function spawnImpactRing(x, y, color) {
-    const ov   = document.getElementById('map-overlay');
-    const ring = document.createElement('div');
-    ring.className     = 'impact-ring';
-    ring.style.left    = x + 'px';
-    ring.style.top     = y + 'px';
-    ring.style.borderColor = color;
-    ov.appendChild(ring);
-    setTimeout(() => ring.remove(), 800);
-  }
-
-  function spawnParticles(x, y, color) {
-    for (let i = 0; i < 10; i++) {
-      const angle = (i / 10) * Math.PI * 2 + Math.random() * 0.3;
-      const spd   = 1.8 + Math.random() * 3;
-      particles.push({
-        x, y,
-        vx: Math.cos(angle) * spd,
-        vy: Math.sin(angle) * spd,
-        color,
-        size: 1.4 + Math.random() * 1.8,
-        born: Date.now(),
-        ttl:  500 + Math.random() * 400,
-      });
-    }
   }
 
   function addPulseRing(x, y, color) {
     pulseRings.push({ x, y, color, born: Date.now(), ttl: 750 });
   }
 
-  /* ── Stars (globe mode only) ─────────────────────────────────── */
+  /* ── Stars ─────────────────────────────────────────────────── */
   function initStars() {
     stars = Array.from({ length: 80 }, () => ({
-      x:       Math.random(),
-      y:       Math.random(),
-      r:       Math.random() * 1.1 + 0.2,
-      baseA:   Math.random() * 0.55 + 0.15,
+      x: Math.random(), y: Math.random(),
+      r: Math.random() * 1.1 + 0.2,
+      baseA: Math.random() * 0.55 + 0.15,
       twinkle: Math.random() * 0.04 + 0.008,
-      phase:   Math.random() * Math.PI * 2,
+      phase: Math.random() * Math.PI * 2,
     }));
   }
 
   function drawStarfield(ts) {
     stars.forEach(s => {
-      const alpha = s.baseA + Math.sin(ts * s.twinkle + s.phase) * 0.18;
-      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.globalAlpha = Math.max(0, s.baseA + Math.sin(ts * s.twinkle + s.phase) * 0.18);
       ctx.beginPath();
       ctx.arc(s.x * mapW, s.y * mapH, s.r, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
@@ -292,22 +264,47 @@ window.AzimuthMap = (() => {
     ctx.globalAlpha = 1;
   }
 
-  /* ── Draw loop ───────────────────────────────────────────────── */
+  /* ── Main draw loop ─────────────────────────────────────────── */
   function frame(ts) {
     if (ts - lastFrame > (globeMode ? 33 : 16)) {
-      ctx.clearRect(0, 0, mapW, mapH);
+      ctx.clearRect(0, 0, mapW, mapH);   // overlay only — bgCanvas persists
 
       if (globeMode) {
-        // Auto-rotate
         if (autoRotate && !paused && !isDragging) {
           globeRot[0] += 0.07;
           proj.rotate(globeRot);
         }
+
         drawStarfield(ts);
-        drawGlobeCanvas();
+        drawGlobeBg();   // updates bgCanvas only when rotation changes enough
+
+        // Atmosphere glow on overlay — simple arc, no geoPath creation
+        ctx.beginPath();
+        ctx.arc(mapW / 2, mapH / 2, proj.scale(), 0, Math.PI * 2);
+        ctx.shadowColor = 'rgba(0, 180, 255, 0.35)';
+        ctx.shadowBlur  = 12;
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.22)';
+        ctx.lineWidth   = 1.8;
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+
+        // City dots — two batched passes (fill, then stroke)
+        const visPts = [];
+        Object.values(GEO).forEach(([lon, lat]) => {
+          const pt = proj([lon, lat]);
+          if (pt) visPts.push(pt);
+        });
+        ctx.fillStyle = 'rgba(0, 212, 255, 0.22)';
+        ctx.beginPath();
+        visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
+        ctx.lineWidth   = 0.5;
+        ctx.beginPath();
+        visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+        ctx.stroke();
       }
 
-      // drawRadarSweep(ts);
       if (showHeat) drawHeat();
       if (showArcs) drawArcs();
       drawPulseRings();
@@ -318,143 +315,59 @@ window.AzimuthMap = (() => {
     rafId = requestAnimationFrame(frame);
   }
 
-  /* ── Globe canvas rendering ─────────────────────────────────── */
-  function drawGlobeCanvas() {
+  /* ── Globe background (persistent canvas) ───────────────────── */
+  function drawGlobeBg() {
     if (!worldData) return;
+    const rotDelta = Math.abs(globeRot[0] - _lastGlobeRot[0]) +
+                     Math.abs(globeRot[1] - _lastGlobeRot[1]);
+    if (rotDelta < 0.5 && _lastGlobeRot[0] !== Infinity) return;
+
     const { countries, borders } = worldData;
+    bgCtx.clearRect(0, 0, mapW, mapH);
 
-    // Rebuild offscreen canvas when rotation changes >0.2° or dimensions changed
-    const rotDelta   = Math.abs(globeRot[0] - _lastGlobeRot[0]) +
-                       Math.abs(globeRot[1] - _lastGlobeRot[1]);
-    const needRebuild = !_globeOff || _globeOff.width !== mapW ||
-                        _globeOff.height !== mapH || rotDelta > 0.5;
-
-    if (needRebuild) {
-      if (!_globeOff || _globeOff.width !== mapW || _globeOff.height !== mapH) {
-        _globeOff       = document.createElement('canvas');
-        _globeOff.width  = mapW;
-        _globeOff.height = mapH;
-        _globeOffCtx    = _globeOff.getContext('2d');
-        _globeOffCgp    = d3.geoPath(proj, _globeOffCtx);
-      }
-      const gc  = _globeOffCtx;
-      const cgp = _globeOffCgp;
-
-      gc.clearRect(0, 0, mapW, mapH);
-
-      // Ocean sphere with depth gradient
-      gc.beginPath();
-      cgp({ type: 'Sphere' });
-      const sg = gc.createRadialGradient(
-        mapW / 2 - proj.scale() * 0.14, mapH / 2 - proj.scale() * 0.18, 0,
-        mapW / 2, mapH / 2, proj.scale()
-      );
-      sg.addColorStop(0,    '#0d2a4a');
-      sg.addColorStop(0.55, '#041020');
-      sg.addColorStop(1,    '#020810');
-      gc.fillStyle = sg;
-      gc.fill();
-
-      // Graticule — use cached object, no re-compute per frame
-      gc.beginPath();
-      cgp(_graticule);
-      gc.strokeStyle = 'rgba(0, 50, 100, 0.55)';
-      gc.lineWidth   = 0.35;
-      gc.stroke();
-
-      // Countries — single batched fill (was 200 individual beginPath/fill/stroke)
-      gc.beginPath();
-      countries.features.forEach(f => cgp(f));
-      gc.fillStyle = '#0c1e32';
-      gc.fill();
-
-      // Borders via topology mesh — one stroke call
-      gc.beginPath();
-      cgp(borders);
-      gc.strokeStyle = '#183650';
-      gc.lineWidth   = 0.4;
-      gc.stroke();
-
-      _lastGlobeRot = [...globeRot];
-    }
-
-    // Blit cached background to main canvas
-    ctx.drawImage(_globeOff, 0, 0);
-
-    // Atmospheric glow — simple circle (sphere IS a circle in orthographic)
-    // Avoids creating a new d3.geoPath every frame
-    ctx.beginPath();
-    ctx.arc(mapW / 2, mapH / 2, proj.scale(), 0, Math.PI * 2);
-    ctx.shadowColor = 'rgba(0, 180, 255, 0.35)';
-    ctx.shadowBlur  = 12;
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.22)';
-    ctx.lineWidth   = 1.8;
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-
-    // City dots — two batched passes instead of 65×4 individual draw calls
-    const visPts = [];
-    Object.values(GEO).forEach(([lon, lat]) => {
-      const pt = proj([lon, lat]);
-      if (pt) visPts.push(pt);
-    });
-    ctx.fillStyle = 'rgba(0, 212, 255, 0.22)';
-    ctx.beginPath();
-    visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
-    ctx.lineWidth   = 0.5;
-    ctx.beginPath();
-    visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
-    ctx.stroke();
-  }
-
-  /* ── Radar sweep ─────────────────────────────────────────────── */
-  function drawRadarSweep(ts) {
-    radarAngle = (ts * 0.00055) % (Math.PI * 2);
-
-    const cx   = mapW / 2;
-    const cy   = mapH / 2;
-    const maxR = Math.hypot(cx, cy) * 1.1;
-    const span = 0.7; // radians of sweep trail
-
-    ctx.save();
-
-    // Fading sweep wedge
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
-    grad.addColorStop(0,   'rgba(0, 255, 120, 0)');
-    grad.addColorStop(0.25, 'rgba(0, 255, 120, 0.06)');
-    grad.addColorStop(1,   'rgba(0, 255, 120, 0)');
-
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, maxR, radarAngle - span, radarAngle);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // Leading edge line
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(radarAngle) * maxR, cy + Math.sin(radarAngle) * maxR);
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.14)';
-    ctx.lineWidth   = 1;
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  /* ── Heatmap ─────────────────────────────────────────────────── */
-  function drawHeat() {
-    const now = performance.now();
-    // Globe: invalidate when rotation changes; flat: invalidate every 600ms
-    const rotChanged = globeMode && (
-      Math.abs(globeRot[0] - _lastGlobeRot[0]) > 0.5 ||
-      Math.abs(globeRot[1] - _lastGlobeRot[1]) > 0.5
+    // Ocean sphere
+    bgCtx.beginPath();
+    _bgCgp({ type: 'Sphere' });
+    const sg = bgCtx.createRadialGradient(
+      mapW / 2 - proj.scale() * 0.14, mapH / 2 - proj.scale() * 0.18, 0,
+      mapW / 2, mapH / 2, proj.scale()
     );
-    const stale = now - _lastHeatTs > 600;
+    sg.addColorStop(0,    '#0d2a4a');
+    sg.addColorStop(0.55, '#041020');
+    sg.addColorStop(1,    '#020810');
+    bgCtx.fillStyle = sg;
+    bgCtx.fill();
 
-    if (_heatOff && !rotChanged && !stale) {
+    // Graticule — use cached object
+    bgCtx.beginPath();
+    _bgCgp(_graticule);
+    bgCtx.strokeStyle = 'rgba(0, 50, 100, 0.55)';
+    bgCtx.lineWidth   = 0.35;
+    bgCtx.stroke();
+
+    // Countries — single batched fill (was 200 individual fills)
+    bgCtx.beginPath();
+    countries.features.forEach(f => _bgCgp(f));
+    bgCtx.fillStyle = '#0c1e32';
+    bgCtx.fill();
+
+    // Borders — one stroke via topology mesh
+    bgCtx.beginPath();
+    _bgCgp(borders);
+    bgCtx.strokeStyle = '#183650';
+    bgCtx.lineWidth   = 0.4;
+    bgCtx.stroke();
+
+    _lastGlobeRot = [...globeRot];
+    _heatDirty    = true;   // globe moved, invalidate heatmap cache
+  }
+
+  /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
+  function drawHeat() {
+    const now   = performance.now();
+    const stale = _heatDirty || (now - _lastHeatTs > 600);
+
+    if (_heatOff && !stale) {
       ctx.drawImage(_heatOff, 0, 0);
       return;
     }
@@ -484,13 +397,14 @@ window.AzimuthMap = (() => {
       hc.fill();
     }
 
-    const attackerMap = window.AzimuthFeed.getAttackerMap();
-    const targetMap   = window.AzimuthFeed.getTargetMap();
-    Object.entries(attackerMap).forEach(([c, n]) => blob(c, n, 255, 51, 85));
-    Object.entries(targetMap).forEach(([c, n])   => blob(c, n, 0, 180, 255));
+    const am = window.AzimuthFeed.getAttackerMap();
+    const tm = window.AzimuthFeed.getTargetMap();
+    Object.entries(am).forEach(([c, n]) => blob(c, n, 255, 51, 85));
+    Object.entries(tm).forEach(([c, n]) => blob(c, n, 0, 180, 255));
 
     ctx.drawImage(_heatOff, 0, 0);
     _lastHeatTs = now;
+    _heatDirty  = false;
   }
 
   /* ── Arc drawing ─────────────────────────────────────────────── */
@@ -501,11 +415,10 @@ window.AzimuthMap = (() => {
     arcs.forEach(arc => {
       if (!paused) arc.progress = Math.min(1, arc.progress + arc.speed);
 
-      // In globe mode, re-project endpoints each frame
       if (globeMode) {
         const sp = proj(arc.srcGeo);
         const tp = proj(arc.tgtGeo);
-        if (!sp || !tp) return; // on back hemisphere — skip
+        if (!sp || !tp) return;
         arc.x1 = sp[0]; arc.y1 = sp[1];
         arc.x2 = tp[0]; arc.y2 = tp[1];
       }
@@ -513,7 +426,6 @@ window.AzimuthMap = (() => {
       const age  = now - arc.born;
       const fade = age > arc.ttl ? 1 - (age - arc.ttl) / 900 : 1;
       if (fade <= 0) return;
-
       drawTacticalArc(arc, fade);
     });
   }
@@ -523,10 +435,11 @@ window.AzimuthMap = (() => {
     const dist = Math.hypot(x2 - x1, y2 - y1);
     if (dist < 3) return;
 
-    const cx  = (x1 + x2) / 2;
-    const cy  = Math.min(y1, y2) - dist * 0.24 - 16;
+    const cx = (x1 + x2) / 2;
+    const cy = Math.min(y1, y2) - dist * 0.24 - 16;
 
-    const STEPS  = 40;
+    // Fewer points in globe mode — less CPU per arc
+    const STEPS  = globeMode ? 24 : 40;
     const nSteps = Math.round(progress * STEPS);
     const pts    = [];
     for (let i = 0; i <= nSteps; i++) {
@@ -539,40 +452,41 @@ window.AzimuthMap = (() => {
     if (pts.length < 2) return;
 
     const [ex, ey] = pts[pts.length - 1];
-
     ctx.save();
     ctx.globalAlpha = fade;
 
-    // Layer 1: wide bloom — no shadowBlur (expensive), pure alpha
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '18';
-    ctx.lineWidth   = 8;
-    ctx.stroke();
+    // Bloom layer — skip in globe mode (saves 33% of stroke calls)
+    if (!globeMode) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.strokeStyle = color + '18';
+      ctx.lineWidth   = 8;
+      ctx.stroke();
+    }
 
-    // Layer 2: mid glow
+    // Glow
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.strokeStyle = color + '3a';
-    ctx.lineWidth   = 3;
+    ctx.lineWidth   = globeMode ? 2 : 3;
     ctx.stroke();
 
-    // Layer 3: core gradient line
-    const lineGrad = ctx.createLinearGradient(x1, y1, ex, ey);
-    lineGrad.addColorStop(0,    color + '14');
-    lineGrad.addColorStop(0.4,  color + '55');
-    lineGrad.addColorStop(0.8,  color + 'bb');
-    lineGrad.addColorStop(1,    color + 'ff');
+    // Core gradient
+    const lg = ctx.createLinearGradient(x1, y1, ex, ey);
+    lg.addColorStop(0,   color + '14');
+    lg.addColorStop(0.4, color + '55');
+    lg.addColorStop(0.8, color + 'bb');
+    lg.addColorStop(1,   color + 'ff');
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = lineGrad;
+    ctx.strokeStyle = lg;
     ctx.lineWidth   = 1.5;
     ctx.stroke();
 
-    // Moving head — shadow only on this small dot
+    // Moving head
     if (progress < 1) {
       ctx.beginPath();
       ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
@@ -587,7 +501,6 @@ window.AzimuthMap = (() => {
       ctx.fill();
     }
 
-    // Arrival — single clean expanding ring, no crosshair/particles
     if (progress >= 0.97 && !arc.impacted) {
       arc.impacted = true;
       addPulseRing(x2, y2, arc.color);
@@ -596,7 +509,7 @@ window.AzimuthMap = (() => {
     ctx.restore();
   }
 
-  /* ── Particle system ─────────────────────────────────────────── */
+  /* ── Particles ───────────────────────────────────────────────── */
   function drawParticles() {
     const now = Date.now();
     particles = particles.filter(p => (now - p.born) < p.ttl);
@@ -605,9 +518,9 @@ window.AzimuthMap = (() => {
       p.x += p.vx; p.y += p.vy;
       p.vx *= 0.93; p.vy *= 0.93;
       ctx.save();
-      ctx.globalAlpha  = life * 0.85;
-      ctx.shadowColor  = p.color;
-      ctx.shadowBlur   = 8;
+      ctx.globalAlpha = life * 0.85;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur  = 8;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * life, 0, Math.PI * 2);
       ctx.fillStyle = p.color;
@@ -639,25 +552,28 @@ window.AzimuthMap = (() => {
   function setShowHeat(v) { showHeat = v; }
   function setPaused(v)   { paused   = v; }
   function clearArcs()    { arcs = []; particles = []; pulseRings = []; }
+  function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; }
 
   function toggleGlobe() {
     globeMode  = !globeMode;
     autoRotate = globeMode;
-    _globeOff  = null;   // force offscreen rebuild for new projection
 
     proj       = makeProj();
     svgGeoPath = d3.geoPath(proj);
+    _bgCgp     = d3.geoPath(proj, bgCtx);
+    _lastGlobeRot = [Infinity, Infinity, Infinity];
 
+    bgCanvas.style.display = globeMode ? 'block' : 'none';
     document.getElementById('map-container').classList.toggle('globe-mode', globeMode);
     renderSVGMap();
 
-    // Re-project existing arcs
     arcs.forEach(a => {
       const sp = proj(a.srcGeo); const tp = proj(a.tgtGeo);
       if (sp) { a.x1 = sp[0]; a.y1 = sp[1]; }
       if (tp) { a.x2 = tp[0]; a.y2 = tp[1]; }
     });
 
+    _heatDirty = true;
     return globeMode;
   }
 
@@ -666,12 +582,15 @@ window.AzimuthMap = (() => {
     const container = document.getElementById('map-container');
     mapW = container.clientWidth;
     mapH = container.clientHeight;
-    canvas.width  = mapW;
-    canvas.height = mapH;
-    proj           = makeProj();
-    svgGeoPath     = d3.geoPath(proj);
-    _globeOff = null;   // force offscreen rebuild at new size
-    _heatOff  = null;
+    canvas.width    = mapW;
+    canvas.height   = mapH;
+    bgCanvas.width  = mapW;
+    bgCanvas.height = mapH;
+    proj       = makeProj();
+    svgGeoPath = d3.geoPath(proj);
+    _bgCgp     = d3.geoPath(proj, bgCtx);
+    _lastGlobeRot = [Infinity, Infinity, Infinity];
+    _heatOff   = null;
     renderSVGMap();
   }
 
@@ -682,5 +601,6 @@ window.AzimuthMap = (() => {
     return pt ? { x: pt[0], y: pt[1] } : { x: 0, y: 0 };
   }
 
-  return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs, lonLatToXY, resize, toggleGlobe };
+  return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs,
+           lonLatToXY, resize, toggleGlobe, invalidateHeat };
 })();

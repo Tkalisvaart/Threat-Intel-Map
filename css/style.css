@@ -299,6 +299,13 @@ html, body {
   height: 100%;
 }
 
+#map-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;   /* shown only in globe mode via JS */
+}
+
 #map-canvas {
   position: absolute;
   inset: 0;

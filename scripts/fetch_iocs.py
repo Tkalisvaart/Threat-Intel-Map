@@ -168,18 +168,22 @@ def main():
 
     print('Fetching Feodo Tracker...')
     try:
-        events = fetch_feodo()
-        print(f'  {len(events)} events')
+        feodo = fetch_feodo()
+        events.extend(feodo)
+        print(f'  {len(feodo)} events')
     except Exception as e:
-        print(f'  failed: {e}')
+        print(f'  Feodo failed: {e}')
 
-    if not events:
-        print('Fetching ThreatFox + ip-api.com...')
-        try:
-            events = fetch_threatfox()
-            print(f'  {len(events)} events')
-        except Exception as e:
-            print(f'  failed: {e}')
+    print('Fetching ThreatFox + ip-api.com...')
+    try:
+        tf = fetch_threatfox()
+        events.extend(tf)
+        print(f'  {len(tf)} events')
+    except Exception as e:
+        print(f'  ThreatFox failed: {e}')
+
+    # Shuffle so replay looks varied
+    random.shuffle(events)
 
     out = Path(__file__).parent.parent / 'data' / 'iocs.json'
     out.parent.mkdir(exist_ok=True)

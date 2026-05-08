@@ -187,5 +187,17 @@ window.AzimuthFeed = (() => {
     if (el) el.textContent = val;
   }
 
-  return { addEvent, setFilter, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap };
+  /* ── Batch ingest from real feed (no animation) ─────────────── */
+  function ingestBatch(events) {
+    events.forEach(e => {
+      if (e.src) attackerMap[e.src] = (attackerMap[e.src] || 0) + 1;
+      if (e.tgt) targetMap[e.tgt]   = (targetMap[e.tgt]   || 0) + 1;
+    });
+    renderAttackers();
+    renderTargets();
+    // Tell map to redraw heatmap with new data
+    if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
+  }
+
+  return { addEvent, ingestBatch, setFilter, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap };
 })();
