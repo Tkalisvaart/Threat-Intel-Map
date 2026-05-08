@@ -444,22 +444,23 @@ window.AzimuthMap = (() => {
     const dist = Math.hypot(x2 - x1, y2 - y1);
     if (dist < 3) return;
 
-    const STEPS  = globeMode ? 24 : 40;
-    const nSteps = Math.round(progress * STEPS);
-    const pts    = [];
+    const STEPS = globeMode ? 28 : 40;
+    const N     = Math.max(2, Math.round(progress * STEPS));
+    const pts   = [];
 
     if (globeMode && arc.srcGeo && arc.tgtGeo) {
-      // Great-circle path — naturally co-rotates with the globe
+      // Great-circle path — distribute N points from 0→progress so the
+      // last point is always at exactly progress (head never snaps).
       const interp = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
-      for (let i = 0; i <= nSteps; i++) {
-        const pt = proj(interp(i / STEPS));
+      for (let i = 0; i <= N; i++) {
+        const pt = proj(interp(progress * i / N));
         if (pt) pts.push(pt);
       }
     } else {
       const cx = (x1 + x2) / 2;
       const cy = Math.min(y1, y2) - dist * 0.24 - 16;
-      for (let i = 0; i <= nSteps; i++) {
-        const t = i / STEPS;
+      for (let i = 0; i <= N; i++) {
+        const t = progress * i / N;
         pts.push([
           (1-t)*(1-t)*x1 + 2*(1-t)*t*cx + t*t*x2,
           (1-t)*(1-t)*y1 + 2*(1-t)*t*cy + t*t*y2,
