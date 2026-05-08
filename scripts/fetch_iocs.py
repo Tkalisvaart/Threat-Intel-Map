@@ -3,8 +3,11 @@
 Fetch threat intel from abuse.ch and write data/iocs.json.
 Run by GitHub Actions on a schedule — no CORS restrictions server-side.
 """
+import concurrent.futures
 import json
 import random
+import socket
+import time
 import urllib.request
 from pathlib import Path
 
@@ -71,11 +74,24 @@ def pick_target(mtype, src):
 
 def map_malware_type(family):
     f = (family or '').lower()
-    if any(x in f for x in ('cobalt', 'asyncrat', 'remcos', 'njrat', 'plugx', 'quasar',
-                             'darkcomet', 'nanocore', 'xworm', 'sliver', 'havoc', 'metasploit')):
+    if any(x in f for x in (
+        # RATs / post-exploitation frameworks
+        'cobalt', 'asyncrat', 'remcos', 'njrat', 'plugx', 'quasar',
+        'darkcomet', 'nanocore', 'xworm', 'sliver', 'havoc', 'metasploit',
+        # Banking trojans / loaders — all C2-driven
+        'emotet', 'qakbot', 'qbot', 'icedid', 'dridex', 'trickbot',
+        'bazarloader', 'bumblebee', 'gootkit', 'ursnif', 'zloader',
+        'amadey', 'systembc', 'pikabot', 'latrodectus',
+        # Info-stealers with C2 check-in
+        'stealc', 'redline', 'raccoon', 'lumma', 'vidar', 'formbook',
+        'agent tesla', 'lokibot', 'snake keylogger',
+    )):
         return 'c2'
-    if any(x in f for x in ('ransomware', 'lockbit', 'blackcat', 'clop', 'conti',
-                             'revil', 'hive', 'sodinokibi', 'akira', 'phobos')):
+    if any(x in f for x in (
+        'ransomware', 'lockbit', 'blackcat', 'clop', 'conti',
+        'revil', 'hive', 'sodinokibi', 'akira', 'phobos',
+        'blackbasta', 'rhysida', 'play', 'medusa',
+    )):
         return 'exploit'
     if 'phish' in f:
         return 'phishing'
@@ -90,7 +106,7 @@ def map_threat_type(raw):
     t = (raw or '').lower()
     if 'phish' in t:
         return 'phishing'
-    if any(x in t for x in ('c2', 'cc', 'command', 'beacon')):
+    if any(x in t for x in ('c2', 'cc', 'command', 'beacon', 'botnet')):
         return 'c2'
     if 'exploit' in t:
         return 'exploit'
@@ -100,23 +116,29 @@ def map_threat_type(raw):
 
 
 def geolocate_ips(ips):
-    """Batch-geolocate up to 100 IPs via ip-api.com (free, no key)."""
+    """Batch-geolocate IPs via ip-api.com (free, no key, 100 IPs/request)."""
     if not ips:
         return {}
-    payload = json.dumps([{'query': ip} for ip in ips[:100]]).encode()
-    req = urllib.request.Request(
-        'http://ip-api.com/batch',
-        data=payload,
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        results = json.loads(r.read())
-    return {
-        r['query']: ISO_TO_COUNTRY.get(r.get('countryCode', ''))
-        for r in results
-        if r.get('status') == 'success'
-    }
+    results = {}
+    chunks = [ips[i:i + 100] for i in range(0, len(ips), 100)]
+    for idx, chunk in enumerate(chunks):
+        payload = json.dumps([{'query': ip} for ip in chunk]).encode()
+        req = urllib.request.Request(
+            'http://ip-api.com/batch',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:
+            batch = json.loads(r.read())
+        for entry in batch:
+            if entry.get('status') == 'success':
+                country = ISO_TO_COUNTRY.get(entry.get('countryCode', ''))
+                if country:
+                    results[entry['query']] = country
+        if idx + 1 < len(chunks):
+            time.sleep(2)  # ip-api free tier: ~45 req/min
+    return results
 
 
 def fetch_feodo():
@@ -127,7 +149,6 @@ def fetch_feodo():
     with urllib.request.urlopen(req, timeout=20) as r:
         entries = json.loads(r.read())
 
-    # Separate entries with / without a known country code
     mapped, unmapped = [], []
     for e in entries:
         cc  = (e.get('country') or '').upper()
@@ -137,7 +158,6 @@ def fetch_feodo():
         elif e.get('ip_address'):
             unmapped.append(e)
 
-    # Geolocate up to 100 entries missing a country
     if unmapped:
         try:
             extra = geolocate_ips([e['ip_address'] for e in unmapped])
@@ -151,9 +171,119 @@ def fetch_feodo():
     events = []
     for e, src in mapped:
         mtype = map_malware_type(e.get('malware', ''))
-        # Each C2 server controls many victims — emit several events
         for _ in range(random.randint(4, 7)):
             events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
+    return events
+
+
+def _resolve(host):
+    """Resolve a hostname to an IPv4 address with a short timeout."""
+    try:
+        socket.setdefaulttimeout(2)
+        return socket.gethostbyname(host)
+    except Exception:
+        return None
+    finally:
+        socket.setdefaulttimeout(None)
+
+
+def fetch_openphish():
+    """Fetch active phishing URLs from OpenPhish — no API key."""
+    req = urllib.request.Request(
+        'https://openphish.com/feed.txt',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        lines = r.read().decode('utf-8').splitlines()
+
+    seen_hosts = set()
+    hosts = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        try:
+            host = line.split('://', 1)[-1].split('/')[0].split('@')[-1]
+            if ':' in host:
+                host = host.rsplit(':', 1)[0]
+            if host and host not in seen_hosts:
+                seen_hosts.add(host)
+                hosts.append(host)
+        except Exception:
+            continue
+
+    if not hosts:
+        return []
+
+    # Resolve all hosts to IPs (mix of raw IPs and domain lookups) in parallel
+    sample = random.sample(hosts, min(200, len(hosts)))
+    print(f'  OpenPhish: resolving {len(sample)} hosts...')
+    host_to_ip = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as pool:
+        futures = {pool.submit(_resolve, h): h for h in sample}
+        done, _ = concurrent.futures.wait(futures, timeout=30)
+        for fut in done:
+            host = futures[fut]
+            ip = fut.result()
+            if ip:
+                host_to_ip[host] = ip
+
+    unique_ips = list(set(host_to_ip.values()))
+    if not unique_ips:
+        return []
+
+    geo = geolocate_ips(unique_ips)
+    ip_to_country = {ip: geo.get(ip) for ip in unique_ips if geo.get(ip)}
+
+    events = []
+    seen_ips = set()
+    for host, ip in host_to_ip.items():
+        src = ip_to_country.get(ip)
+        if src and ip not in seen_ips:
+            seen_ips.add(ip)
+            for _ in range(random.randint(2, 5)):
+                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing'})
+    return events
+
+
+def fetch_blocklist_de():
+    """Fetch attack IPs from Blocklist.de by category — no API key required."""
+    feeds = [
+        ('https://lists.blocklist.de/lists/ssh.txt',        'recon'),
+        ('https://lists.blocklist.de/lists/apache.txt',     'exploit'),
+        ('https://lists.blocklist.de/lists/bots.txt',       'ddos'),
+        ('https://lists.blocklist.de/lists/bruteforce.txt', 'recon'),
+        ('https://lists.blocklist.de/lists/mail.txt',       'malware'),
+    ]
+    ip_entries = []
+    seen = set()
+
+    for url, mtype in feeds:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'azimuth-threat-map/1.0'})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                lines = r.read().decode('utf-8').splitlines()
+            ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
+            sample = random.sample(ips, min(50, len(ips)))
+            for ip in sample:
+                if ip not in seen:
+                    seen.add(ip)
+                    ip_entries.append((ip, mtype))
+        except Exception:
+            pass
+
+    if not ip_entries:
+        return []
+
+    print(f'  Blocklist.de: geolocating {len(ip_entries)} IPs...')
+    geo = geolocate_ips([ip for ip, _ in ip_entries])
+
+    events = []
+    for ip, mtype in ip_entries:
+        src = geo.get(ip)
+        if src:
+            for _ in range(random.randint(2, 4)):
+                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype})
     return events
 
 
@@ -168,9 +298,22 @@ def main():
     except Exception as e:
         print(f'  Feodo failed: {e}')
 
-    # Secondary sources can be added here when auth keys are available
+    print('Fetching OpenPhish...')
+    try:
+        openphish = fetch_openphish()
+        events.extend(openphish)
+        print(f'  {len(openphish)} events')
+    except Exception as e:
+        print(f'  OpenPhish failed: {e}')
 
-    # Shuffle so replay looks varied
+    print('Fetching Blocklist.de...')
+    try:
+        bld = fetch_blocklist_de()
+        events.extend(bld)
+        print(f'  {len(bld)} events')
+    except Exception as e:
+        print(f'  Blocklist.de failed: {e}')
+
     random.shuffle(events)
 
     out = Path(__file__).parent.parent / 'data' / 'iocs.json'
