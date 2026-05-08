@@ -353,6 +353,29 @@ window.AzimuthMap = (() => {
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
   function drawHeat() {
+    const am = window.AzimuthFeed.getAttackerMap();
+    const tm = window.AzimuthFeed.getTargetMap();
+
+    if (globeMode) {
+      // Globe rotates every frame so cached pixel positions are always stale.
+      // Draw directly to the overlay with cheap alpha circles (no gradients).
+      function blobGlobe(country, count, r, g, b) {
+        if (!GEO[country]) return;
+        const pt = proj(GEO[country]);
+        if (!pt) return;
+        const [x, y] = pt;
+        const radius = Math.min(52, 10 + count * 2.4);
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},${b},0.18)`;
+        ctx.fill();
+      }
+      Object.entries(am).forEach(([c, n]) => blobGlobe(c, n, 255, 51, 85));
+      Object.entries(tm).forEach(([c, n]) => blobGlobe(c, n, 0, 180, 255));
+      return;
+    }
+
+    // Flat map — use offscreen cache with radial gradients
     const now   = performance.now();
     const stale = now - _lastHeatTs > 800;
 
@@ -386,8 +409,6 @@ window.AzimuthMap = (() => {
       hc.fill();
     }
 
-    const am = window.AzimuthFeed.getAttackerMap();
-    const tm = window.AzimuthFeed.getTargetMap();
     Object.entries(am).forEach(([c, n]) => blob(c, n, 255, 51, 85));
     Object.entries(tm).forEach(([c, n]) => blob(c, n, 0, 180, 255));
 
@@ -423,19 +444,27 @@ window.AzimuthMap = (() => {
     const dist = Math.hypot(x2 - x1, y2 - y1);
     if (dist < 3) return;
 
-    const cx = (x1 + x2) / 2;
-    const cy = Math.min(y1, y2) - dist * 0.24 - 16;
-
-    // Fewer points in globe mode — less CPU per arc
     const STEPS  = globeMode ? 24 : 40;
     const nSteps = Math.round(progress * STEPS);
     const pts    = [];
-    for (let i = 0; i <= nSteps; i++) {
-      const t = i / STEPS;
-      pts.push([
-        (1-t)*(1-t)*x1 + 2*(1-t)*t*cx + t*t*x2,
-        (1-t)*(1-t)*y1 + 2*(1-t)*t*cy + t*t*y2,
-      ]);
+
+    if (globeMode && arc.srcGeo && arc.tgtGeo) {
+      // Great-circle path — naturally co-rotates with the globe
+      const interp = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
+      for (let i = 0; i <= nSteps; i++) {
+        const pt = proj(interp(i / STEPS));
+        if (pt) pts.push(pt);
+      }
+    } else {
+      const cx = (x1 + x2) / 2;
+      const cy = Math.min(y1, y2) - dist * 0.24 - 16;
+      for (let i = 0; i <= nSteps; i++) {
+        const t = i / STEPS;
+        pts.push([
+          (1-t)*(1-t)*x1 + 2*(1-t)*t*cx + t*t*x2,
+          (1-t)*(1-t)*y1 + 2*(1-t)*t*cy + t*t*y2,
+        ]);
+      }
     }
     if (pts.length < 2) return;
 
