@@ -468,17 +468,22 @@ window.AzimuthMap = (() => {
     const dist = Math.hypot(x2 - x1, y2 - y1);
     if (dist < 3) return;
 
-    const STEPS = globeMode ? 28 : 40;
+    const STEPS = globeMode ? 60 : 40;
     const N     = Math.max(2, Math.round(progress * STEPS));
     const pts   = [];
 
     if (globeMode && arc.srcGeo && arc.tgtGeo) {
-      // Great-circle path — distribute N points from 0→progress so the
-      // last point is always at exactly progress (head never snaps).
-      const interp = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
+      // Great-circle path lifted above globe surface — sine-curve lift so
+      // arc rises into space and returns to surface at the target.
+      const interp  = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
+      const cx = mapW / 2, cy = mapH / 2;
+      const MAX_LIFT = 0.35;
       for (let i = 0; i <= N; i++) {
-        const pt = proj(interp(progress * i / N));
-        if (pt) pts.push(pt);
+        const t  = progress * i / N;
+        const pt = proj(interp(t));
+        if (!pt) continue;
+        const lift = MAX_LIFT * Math.sin(Math.PI * t);
+        pts.push([cx + (pt[0] - cx) * (1 + lift), cy + (pt[1] - cy) * (1 + lift)]);
       }
     } else {
       const cx = (x1 + x2) / 2;
@@ -497,39 +502,33 @@ window.AzimuthMap = (() => {
     ctx.save();
     ctx.globalAlpha = fade;
 
-    // Bloom layer — skip in globe mode (saves 33% of stroke calls)
-    if (!globeMode) {
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-      ctx.strokeStyle = color + '18';
-      ctx.lineWidth   = 8;
-      ctx.stroke();
-    }
+    // Bloom layer
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.strokeStyle = color + '18';
+    ctx.lineWidth   = globeMode ? 6 : 8;
+    ctx.stroke();
 
     // Glow
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.strokeStyle = color + '3a';
-    ctx.lineWidth   = globeMode ? 2 : 3;
+    ctx.lineWidth   = globeMode ? 2.5 : 3;
     ctx.stroke();
 
-    // Core line — skip gradient in globe mode
+    // Core line — gradient trail (transparent at origin, bright at head)
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    if (globeMode) {
-      ctx.strokeStyle = color + 'cc';
-    } else {
-      const lg = ctx.createLinearGradient(x1, y1, ex, ey);
-      lg.addColorStop(0,   color + '14');
-      lg.addColorStop(0.4, color + '55');
-      lg.addColorStop(0.8, color + 'bb');
-      lg.addColorStop(1,   color + 'ff');
-      ctx.strokeStyle = lg;
-    }
-    ctx.lineWidth = 1.5;
+    const lg = ctx.createLinearGradient(pts[0][0], pts[0][1], ex, ey);
+    lg.addColorStop(0,   color + '14');
+    lg.addColorStop(0.4, color + '55');
+    lg.addColorStop(0.8, color + 'bb');
+    lg.addColorStop(1,   color + 'ff');
+    ctx.strokeStyle = lg;
+    ctx.lineWidth = globeMode ? 1.8 : 1.5;
     ctx.stroke();
 
     // Moving head — concentric alpha circles, no shadowBlur
