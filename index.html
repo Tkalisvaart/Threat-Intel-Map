@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Threat Intelligence Map</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;500;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- TOP BAR -->
+    <header id="topbar">
+      <div class="top-stat">
+        <span class="top-stat-val" id="ts-total">0</span>
+        <span class="top-stat-lbl">Total Attacks</span>
+      </div>
+      <div class="top-stat">
+        <span class="top-stat-val" id="ts-rate">0</span>
+        <span class="top-stat-lbl">Attacks / min</span>
+      </div>
+      <div class="top-stat">
+        <span class="top-stat-val" id="ts-countries">0</span>
+        <span class="top-stat-lbl">Source Countries</span>
+      </div>
+      <div class="top-stat">
+        <span class="top-stat-val red" id="ts-severity">CRITICAL</span>
+        <span class="top-stat-lbl">Global Threat Level</span>
+      </div>
+
+      <div id="live-indicator">
+        <div id="live-dot"></div>
+        <span id="live-label">Live</span>
+      </div>
+      <div id="clock"></div>
+      <button id="btn-shortcuts" title="Keyboard shortcuts (?)">?</button>
+    </header>
+
+    <!-- LEFT PANEL -->
+    <aside id="left">
+      <div class="panel-header">
+        <span class="panel-title">Attack Feed</span>
+        <span class="panel-count" id="feed-count">0 events</span>
+      </div>
+      <div id="feed-list"></div>
+      <div id="filter-bar">
+        <button class="filter-btn active" data-f="all">All</button>
+        <button class="filter-btn f-malware" data-f="malware">Malware</button>
+        <button class="filter-btn f-ddos" data-f="ddos">DDoS</button>
+        <button class="filter-btn f-phishing" data-f="phishing">Phishing</button>
+        <button class="filter-btn f-recon" data-f="recon">Recon</button>
+        <button class="filter-btn f-c2" data-f="c2">C2</button>
+        <button class="filter-btn f-exploit" data-f="exploit">Exploit</button>
+      </div>
+    </aside>
+
+    <!-- MAP -->
+    <main id="map-container">
+      <div id="map-svg-wrap">
+        <svg id="world-svg" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <canvas id="map-canvas"></canvas>
+      <div id="map-overlay"></div>
+
+      <div id="tooltip">
+        <div class="tt-country" id="tt-country"></div>
+        <div class="tt-row"><span>Attacks out</span><span class="tt-val" id="tt-out">0</span></div>
+        <div class="tt-row"><span>Attacks in</span><span class="tt-val" id="tt-in">0</span></div>
+        <div class="tt-row"><span>Top threat</span><span class="tt-val" id="tt-threat">—</span></div>
+      </div>
+
+      <div id="map-controls">
+        <button class="map-btn active" id="btn-arcs">Arcs</button>
+        <button class="map-btn active" id="btn-heat">Heatmap</button>
+        <button class="map-btn" id="btn-pause">Pause</button>
+        <button class="map-btn" id="btn-clear">Clear</button>
+      </div>
+
+      <div id="map-controls-right">
+        <button class="map-btn" id="btn-globe" title="Toggle Globe / Map (G)">Globe</button>
+        <button class="map-btn" id="btn-fs" title="Fullscreen (F)">Full</button>
+        <button class="map-btn" id="btn-theater" title="Focus mode — hide panels (T)">Focus</button>
+        <button class="map-btn" id="btn-export" title="Export PNG snapshot (E)">Export</button>
+        <button class="map-btn" id="btn-csv" title="Export CSV feed (X)">CSV</button>
+      </div>
+    </main>
+
+    <!-- RIGHT PANEL -->
+    <aside id="right">
+      <div class="panel-header"><span class="panel-title">Threat Overview</span></div>
+
+      <div id="stats-grid">
+        <div class="stat-cell">
+          <div class="stat-num red" id="r-critical">0</div>
+          <div class="stat-lbl">Critical</div>
+        </div>
+        <div class="stat-cell alt">
+          <div class="stat-num amber" id="r-high">0</div>
+          <div class="stat-lbl">High</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num" id="r-medium">0</div>
+          <div class="stat-lbl">Medium</div>
+        </div>
+        <div class="stat-cell alt">
+          <div class="stat-num purple" id="r-unique">0</div>
+          <div class="stat-lbl">Unique IPs</div>
+        </div>
+      </div>
+
+      <div class="panel-header"><span class="panel-title">Top Attackers</span></div>
+      <div id="attackers"></div>
+
+      <div id="timeline-wrap">
+        <div class="timeline-label">Attack Rate — 60s</div>
+        <canvas id="timeline-canvas"></canvas>
+      </div>
+
+      <div id="breakdown">
+        <div class="breakdown-title">Attack Types</div>
+        <div class="bd-row">
+          <span class="bd-label">Malware</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-malware" style="background:var(--red)"></div></div>
+          <span class="bd-pct red" id="bpct-malware">0%</span>
+        </div>
+        <div class="bd-row">
+          <span class="bd-label">DDoS</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-ddos" style="background:var(--amber)"></div></div>
+          <span class="bd-pct amber" id="bpct-ddos">0%</span>
+        </div>
+        <div class="bd-row">
+          <span class="bd-label">Phishing</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-phishing" style="background:var(--purple)"></div></div>
+          <span class="bd-pct purple" id="bpct-phishing">0%</span>
+        </div>
+        <div class="bd-row">
+          <span class="bd-label">Recon</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-recon" style="background:var(--accent)"></div></div>
+          <span class="bd-pct accent" id="bpct-recon">0%</span>
+        </div>
+        <div class="bd-row">
+          <span class="bd-label">C2</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-c2" style="background:var(--green)"></div></div>
+          <span class="bd-pct green" id="bpct-c2">0%</span>
+        </div>
+        <div class="bd-row">
+          <span class="bd-label">Exploit</span>
+          <div class="bd-track"><div class="bd-fill" id="bd-exploit" style="background:#ff8844"></div></div>
+          <span class="bd-pct orange" id="bpct-exploit">0%</span>
+        </div>
+      </div>
+    </aside>
+
+  <!-- KEYBOARD SHORTCUTS MODAL -->
+  <div id="shortcuts-modal">
+    <div id="shortcuts-box">
+      <div class="sc-title">Keyboard Shortcuts</div>
+      <div class="sc-grid">
+        <kbd>G</kbd><span>Toggle Globe / Map mode</span>
+        <kbd>F</kbd><span>Toggle fullscreen</span>
+        <kbd>T</kbd><span>Focus / Theater mode</span>
+        <kbd>P</kbd><span>Pause / Resume</span>
+        <kbd>C</kbd><span>Clear arcs</span>
+        <kbd>H</kbd><span>Toggle heatmap</span>
+        <kbd>A</kbd><span>Toggle arcs</span>
+        <kbd>E</kbd><span>Export PNG snapshot</span>
+        <kbd>X</kbd><span>Export CSV feed</span>
+        <kbd>?</kbd><span>This help screen</span>
+        <kbd>Esc</kbd><span>Close / exit fullscreen</span>
+      </div>
+      <div class="sc-close">Click outside or press Esc to close</div>
+    </div>
+  </div>
+
+  </div><!-- /app -->
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/feed.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
