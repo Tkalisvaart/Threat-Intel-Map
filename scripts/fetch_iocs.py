@@ -5,6 +5,7 @@ Run by GitHub Actions on a schedule — no CORS restrictions server-side.
 """
 import concurrent.futures
 import json
+import os
 import random
 import socket
 import time
@@ -170,10 +171,12 @@ def fetch_feodo():
 
     events = []
     for e, src in mapped:
-        mtype = map_malware_type(e.get('malware', ''))
-        ip    = e.get('ip_address', '')
+        mtype      = map_malware_type(e.get('malware', ''))
+        ip         = e.get('ip_address', '')
+        family     = e.get('malware', '')
+        first_seen = (e.get('first_seen') or '')[:10]
         for _ in range(random.randint(4, 7)):
-            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip})
+            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family, 'first_seen': first_seen})
     return events
 
 
@@ -243,23 +246,23 @@ def fetch_openphish():
         if src and ip not in seen_ips:
             seen_ips.add(ip)
             for _ in range(random.randint(2, 5)):
-                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip})
+                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip, 'family': 'Phishing Site', 'first_seen': ''})
     return events
 
 
 def fetch_blocklist_de():
     """Fetch attack IPs from Blocklist.de by category — no API key required."""
     feeds = [
-        ('https://lists.blocklist.de/lists/ssh.txt',        'recon'),
-        ('https://lists.blocklist.de/lists/apache.txt',     'exploit'),
-        ('https://lists.blocklist.de/lists/bots.txt',       'ddos'),
-        ('https://lists.blocklist.de/lists/bruteforce.txt', 'recon'),
-        ('https://lists.blocklist.de/lists/mail.txt',       'malware'),
+        ('https://lists.blocklist.de/lists/ssh.txt',        'recon',   'SSH Brute Force'),
+        ('https://lists.blocklist.de/lists/apache.txt',     'exploit', 'Web Exploit'),
+        ('https://lists.blocklist.de/lists/bots.txt',       'ddos',    'Botnet'),
+        ('https://lists.blocklist.de/lists/bruteforce.txt', 'recon',   'Brute Force'),
+        ('https://lists.blocklist.de/lists/mail.txt',       'malware', 'Mail Spam'),
     ]
     ip_entries = []
     seen = set()
 
-    for url, mtype in feeds:
+    for url, mtype, family_label in feeds:
         try:
             req = urllib.request.Request(url, headers={'User-Agent': 'azimuth-threat-map/1.0'})
             with urllib.request.urlopen(req, timeout=20) as r:
@@ -269,7 +272,7 @@ def fetch_blocklist_de():
             for ip in sample:
                 if ip not in seen:
                     seen.add(ip)
-                    ip_entries.append((ip, mtype))
+                    ip_entries.append((ip, mtype, family_label))
         except Exception:
             pass
 
@@ -277,14 +280,92 @@ def fetch_blocklist_de():
         return []
 
     print(f'  Blocklist.de: geolocating {len(ip_entries)} IPs...')
-    geo = geolocate_ips([ip for ip, _ in ip_entries])
+    geo = geolocate_ips([ip for ip, _, _ in ip_entries])
 
     events = []
-    for ip, mtype in ip_entries:
+    for ip, mtype, family_label in ip_entries:
         src = geo.get(ip)
         if src:
             for _ in range(random.randint(2, 4)):
-                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip})
+                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family_label, 'first_seen': ''})
+    return events
+
+
+def fetch_emerging_threats():
+    """Fetch compromised IPs from Emerging Threats — no API key required."""
+    req = urllib.request.Request(
+        'https://rules.emergingthreats.net/blockrules/compromised-ips.txt',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        lines = r.read().decode('utf-8').splitlines()
+
+    ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
+    if not ips:
+        return []
+
+    sample = random.sample(ips, min(80, len(ips)))
+    print(f'  Emerging Threats: geolocating {len(sample)} IPs...')
+    geo = geolocate_ips(sample)
+
+    events = []
+    for ip in sample:
+        src = geo.get(ip)
+        if src:
+            for _ in range(random.randint(2, 4)):
+                events.append({'src': src, 'tgt': pick_target('malware', src), 'type': 'malware', 'ip': ip, 'family': 'Compromised Host', 'first_seen': ''})
+    return events
+
+
+def fetch_abuseipdb(api_key):
+    """Fetch blacklisted IPs from AbuseIPDB verbose endpoint."""
+    CAT_TYPE = {
+        4:  'ddos',
+        7:  'phishing',
+        14: 'recon', 18: 'recon', 22: 'recon', 5: 'recon',
+        15: 'exploit', 16: 'exploit', 20: 'exploit', 21: 'exploit',
+    }
+    TYPE_PRIORITY = ['ddos', 'exploit', 'phishing', 'recon', 'malware']
+
+    def pick_type(categories):
+        types = set()
+        for c in (categories or []):
+            t = CAT_TYPE.get(c)
+            if t:
+                types.add(t)
+        for t in TYPE_PRIORITY:
+            if t in types:
+                return t
+        return 'malware'
+
+    req = urllib.request.Request(
+        'https://api.abuseipdb.com/api/v2/blacklist?confidenceMinimum=90&limit=1000&verbose',
+        headers={
+            'Key': api_key,
+            'Accept': 'application/json',
+            'User-Agent': 'azimuth-threat-map/1.0',
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read())
+
+    entries = data.get('data', [])
+    if not entries:
+        return []
+
+    sample = random.sample(entries, min(150, len(entries)))
+
+    events = []
+    for entry in sample:
+        cc      = (entry.get('countryCode') or '').upper()
+        src     = ISO_TO_COUNTRY.get(cc)
+        if not src:
+            continue
+        ip         = entry.get('ipAddress', '')
+        mtype      = pick_type(entry.get('categories', []))
+        first_seen = (entry.get('lastReportedAt') or '')[:10]
+        for _ in range(random.randint(2, 4)):
+            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen})
     return events
 
 
@@ -314,6 +395,26 @@ def main():
         print(f'  {len(bld)} events')
     except Exception as e:
         print(f'  Blocklist.de failed: {e}')
+
+    print('Fetching Emerging Threats...')
+    try:
+        et = fetch_emerging_threats()
+        events.extend(et)
+        print(f'  {len(et)} events')
+    except Exception as e:
+        print(f'  Emerging Threats failed: {e}')
+
+    abuseipdb_key = os.environ.get('ABUSEIPDB_KEY', '')
+    if abuseipdb_key:
+        print('Fetching AbuseIPDB...')
+        try:
+            ab = fetch_abuseipdb(abuseipdb_key)
+            events.extend(ab)
+            print(f'  {len(ab)} events')
+        except Exception as e:
+            print(f'  AbuseIPDB failed: {e}')
+    else:
+        print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
 
     random.shuffle(events)
 

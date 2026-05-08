@@ -11,6 +11,8 @@
   let theater  = false;
   let simTimer = null;
 
+  let _dataLastModified = null;
+
   /* ── Clock + Session uptime ─────────────────────────────────── */
   const sessionStart = Date.now();
 
@@ -199,6 +201,85 @@
 
   document.getElementById('btn-csv').addEventListener('click', exportCSV);
 
+  /* ── Country detail drawer ──────────────────────────────────── */
+  const AzimuthDrawer = (() => {
+    const { FLAGS, TYPES } = window.AZIMUTH_DATA;
+    const drawer = document.getElementById('country-drawer');
+
+    function open(country) {
+      if (!country) return;
+      document.getElementById('d-flag').textContent  = FLAGS[country] || '🌐';
+      document.getElementById('d-cname').textContent = country;
+
+      const stats = window.AzimuthFeed.getCountryStats(country);
+      document.getElementById('d-out').textContent    = stats.out;
+      document.getElementById('d-in').textContent     = stats.in;
+      document.getElementById('d-threat').textContent = stats.topThreat || '—';
+
+      const breakdown = window.AzimuthFeed.getTypeBreakdownOf(country);
+      const bdTotal   = Object.values(breakdown).reduce((a, b) => a + b, 0) || 1;
+      Object.keys(TYPES).forEach(k => {
+        const pct   = Math.round((breakdown[k] || 0) / bdTotal * 100);
+        const fill  = document.getElementById('dbd-' + k);
+        const pctEl = document.getElementById('dbpct-' + k);
+        if (fill)  fill.style.width  = pct + '%';
+        if (pctEl) pctEl.textContent = pct + '%';
+      });
+
+      const targets = window.AzimuthFeed.getTopTargetsOf(country);
+      document.getElementById('d-targets').innerHTML = targets.length
+        ? targets.map(([c, n]) => `<div class="d-row"><span class="d-row-flag">${FLAGS[c]||'🌐'}</span><span class="d-row-country">${c}</span><span class="d-row-count">${n}</span></div>`).join('')
+        : '<div class="d-empty">No outbound events yet</div>';
+
+      const sources = window.AzimuthFeed.getTopSourcesOf(country);
+      document.getElementById('d-sources').innerHTML = sources.length
+        ? sources.map(([c, n]) => `<div class="d-row"><span class="d-row-flag">${FLAGS[c]||'🌐'}</span><span class="d-row-country">${c}</span><span class="d-row-count">${n}</span></div>`).join('')
+        : '<div class="d-empty">No inbound events yet</div>';
+
+      const events = window.AzimuthFeed.getAllEvents()
+        .filter(e => e.src === country || e.tgt === country)
+        .slice(0, 10);
+      document.getElementById('d-events').innerHTML = events.length
+        ? events.map(e => {
+            const t   = TYPES[e.type];
+            const dir = e.src === country ? '→' : '←';
+            const peer = e.src === country ? e.tgt : e.src;
+            const vtUrl = `https://www.virustotal.com/gui/ip-address/${e.ip}`;
+            return `<div class="d-event">
+              <span class="fi-type ${t.cls}">${t.label}</span>
+              <span class="d-event-dir">${dir}</span>
+              <span class="d-event-peer">${peer}</span>
+              <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer">${e.ip}</a>
+              ${e.first_seen ? `<span class="d-event-first">${e.first_seen}</span>` : ''}
+            </div>`;
+          }).join('')
+        : '<div class="d-empty">No events yet</div>';
+
+      drawer.classList.add('open');
+    }
+
+    function close() { drawer.classList.remove('open'); }
+
+    document.getElementById('d-close').addEventListener('click', close);
+    document.getElementById('map-container').addEventListener('click', e => {
+      if (e.target === drawer || drawer.contains(e.target)) return;
+      if (drawer.classList.contains('open')) close();
+    });
+
+    return { open, close };
+  })();
+
+  window.AzimuthDrawer = AzimuthDrawer;
+
+  /* ── Search wire-up ─────────────────────────────────────────── */
+  const searchInput = document.getElementById('feed-search');
+  const searchClear = document.getElementById('search-clear');
+  searchInput.addEventListener('input', () => AzimuthFeed.setSearch(searchInput.value));
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    AzimuthFeed.setSearch('');
+  });
+
   /* ── Keyboard Shortcuts Modal ───────────────────────────────── */
   const modal = document.getElementById('shortcuts-modal');
 
@@ -297,6 +378,7 @@
 
   setInterval(drawTimeline, 1000);
   drawTimeline();
+  drawHistory();
 
   /* ── Public API (for real CTI feed integration) ─────────────── */
   /**
@@ -365,14 +447,87 @@
     });
   }
 
+  function saveHistorySnapshot(events) {
+    const key = 'azimuth_24h';
+    const now  = Date.now();
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+    const byType = {};
+    events.forEach(e => { if (e.type) byType[e.type] = (byType[e.type] || 0) + 1; });
+    history.push({ ts: now, total: events.length, byType });
+    const cutoff = now - 24 * 3600 * 1000;
+    history = history.filter(h => h.ts > cutoff).slice(-24);
+    try { localStorage.setItem(key, JSON.stringify(history)); } catch {}
+  }
+
+  function drawHistory() {
+    const canvas = document.getElementById('history-canvas');
+    if (!canvas) return;
+    const W = canvas.parentElement.clientWidth - 28;
+    if (W <= 0) return;
+    canvas.width  = W;
+    canvas.height = 28;
+    const hctx = canvas.getContext('2d');
+    hctx.clearRect(0, 0, W, 28);
+
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem('azimuth_24h') || '[]'); } catch {}
+
+    if (history.length < 1) {
+      hctx.fillStyle = 'rgba(106,143,170,0.3)';
+      hctx.font = '8px JetBrains Mono, monospace';
+      hctx.fillText('Collecting — data appears after first hourly fetch', 2, 17);
+      return;
+    }
+
+    const typeColors = { malware:'#ff3355', c2:'#00ff88', exploit:'#ff8844', phishing:'#aa44ff', ddos:'#ffaa00', recon:'#00d4ff' };
+    const slots = history.slice(-24);
+    const barW  = W / Math.max(slots.length, 1);
+
+    slots.forEach((snap, i) => {
+      const total = Object.values(snap.byType).reduce((a, b) => a + b, 0) || 1;
+      let y = 28;
+      const typeOrder = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
+      typeOrder.forEach(type => {
+        const count = snap.byType[type] || 0;
+        if (!count) return;
+        const h = Math.max(1, Math.round((count / total) * 28));
+        hctx.fillStyle = typeColors[type] || '#444';
+        hctx.fillRect(i * barW + 0.5, y - h, Math.max(1, barW - 1.5), h);
+        y -= h;
+      });
+    });
+
+    hctx.fillStyle = 'rgba(106,143,170,0.5)';
+    hctx.font = '7px JetBrains Mono, monospace';
+    if (slots.length > 0) {
+      const d = new Date(slots[0].ts);
+      hctx.fillText(d.getHours() + ':00', 0, 27);
+    }
+    hctx.textAlign = 'right';
+    hctx.fillText('now', W, 27);
+    hctx.textAlign = 'left';
+  }
+
   async function pollRealFeed() {
     try {
-      const res = await fetch('./data/iocs.json', { cache: 'no-store' });
+      const headers = {};
+      if (_dataLastModified) headers['If-Modified-Since'] = _dataLastModified;
+
+      const res = await fetch('./data/iocs.json', { cache: 'no-cache', headers });
+
+      if (res.status === 304) return; // not modified — skip re-processing
       if (!res.ok) { setIntelSource('SIMULATION', false); return; }
+
+      const lm = res.headers.get('Last-Modified');
+      if (lm) _dataLastModified = lm;
+
       const events = await res.json();
       if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
 
       setRealFeedStats(events);
+      saveHistorySnapshot(events);
+      drawHistory();
 
       const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
       const gap   = Math.max(500, Math.floor(55_000 / batch.length));

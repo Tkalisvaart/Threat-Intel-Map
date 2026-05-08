@@ -18,6 +18,7 @@ window.AzimuthFeed = (() => {
   let totalCount  = 0;
   let perMinute   = [];  // timestamps for rate calc
   let activeFilter = 'all';
+  let activeSearch = '';
 
   /* ── Public: ingest an attack event ───────────────────────── */
   function addEvent(attack) {
@@ -38,7 +39,7 @@ window.AzimuthFeed = (() => {
     perMinute.push(now);
     perMinute = perMinute.filter(t => now - t < 60_000);
 
-    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), severity: typeInfo.severity });
+    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), severity: typeInfo.severity, family: attack.family || '', first_seen: attack.first_seen || '' });
     if (feedItems.length > MAX_FEED) feedItems.pop();
 
     renderFeed();
@@ -51,9 +52,20 @@ window.AzimuthFeed = (() => {
   /* ── Rendering ─────────────────────────────────────────────── */
   function renderFeed() {
     const list  = document.getElementById('feed-list');
-    const items = activeFilter === 'all'
+    let items = activeFilter === 'all'
       ? feedItems
       : feedItems.filter(f => f.type === activeFilter);
+
+    if (activeSearch) {
+      const q = activeSearch;
+      items = items.filter(f =>
+        f.ip.includes(q) ||
+        f.src.toLowerCase().includes(q) ||
+        f.tgt.toLowerCase().includes(q) ||
+        (f.family || '').toLowerCase().includes(q) ||
+        f.type.includes(q)
+      );
+    }
 
     document.getElementById('feed-count').textContent = items.length + ' events';
 
@@ -62,21 +74,23 @@ window.AzimuthFeed = (() => {
       const t   = TYPES[item.type];
       const sev = item.severity;
       const sevColor = sev === 'CRITICAL' ? 'var(--red)' : sev === 'HIGH' ? 'var(--amber)' : 'var(--text2)';
+      const vtUrl = `https://www.virustotal.com/gui/ip-address/${item.ip}`;
 
       const div = document.createElement('div');
       div.className = 'feed-item' + (i === 0 ? ' new-item' : '');
       div.innerHTML = `
-        <div class="fi-top">
-          <span class="fi-type ${t.cls}">${t.label}</span>
-          <span class="fi-src">${item.src}</span>
-          <span class="fi-arr">→</span>
-          <span class="fi-tgt">${item.tgt}</span>
-          <span class="fi-time">${item.time}</span>
-        </div>
-        <div class="fi-bot">
-          <span class="fi-ip">${item.ip}</span>
-          <span class="fi-sev" style="color:${sevColor}">${sev}</span>
-        </div>`;
+      <div class="fi-top">
+        <span class="fi-type ${t.cls}">${t.label}</span>
+        <span class="fi-src" data-country="${item.src}" role="button">${item.src}</span>
+        <span class="fi-arr">→</span>
+        <span class="fi-tgt" data-country="${item.tgt}" role="button">${item.tgt}</span>
+        <span class="fi-time">${item.time}</span>
+      </div>
+      <div class="fi-bot">
+        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>
+        ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
+        <span class="fi-sev" style="color:${sevColor}">${sev}</span>
+      </div>`;
       list.appendChild(div);
     });
   }
@@ -147,6 +161,11 @@ window.AzimuthFeed = (() => {
     renderFeed();
   }
 
+  function setSearch(q) {
+    activeSearch = q.toLowerCase().trim();
+    renderFeed();
+  }
+
   /* ── Queries ─────────────────────────────────────────────────── */
   function getCountryStats(country) {
     const out      = attackerMap[country] || 0;
@@ -199,5 +218,34 @@ window.AzimuthFeed = (() => {
     if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
   }
 
-  return { addEvent, ingestBatch, setFilter, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap };
+  function getTopTargetsOf(country) {
+    const counts = {};
+    feedItems.filter(f => f.src === country).forEach(f => {
+      counts[f.tgt] = (counts[f.tgt] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }
+
+  function getTopSourcesOf(country) {
+    const counts = {};
+    feedItems.filter(f => f.tgt === country).forEach(f => {
+      counts[f.src] = (counts[f.src] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }
+
+  function getTypeBreakdownOf(country) {
+    const counts = {};
+    feedItems.filter(f => f.src === country).forEach(f => {
+      counts[f.type] = (counts[f.type] || 0) + 1;
+    });
+    return counts;
+  }
+
+  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf };
 })();
+
+document.getElementById('feed-list').addEventListener('click', e => {
+  const el = e.target.closest('[data-country]');
+  if (el && window.AzimuthDrawer) window.AzimuthDrawer.open(el.dataset.country);
+});

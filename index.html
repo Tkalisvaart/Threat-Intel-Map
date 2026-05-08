@@ -67,6 +67,10 @@
         <span class="panel-title">Attack Feed</span>
         <span class="panel-count" id="feed-count">0 events</span>
       </div>
+      <div id="search-wrap">
+        <input type="text" id="feed-search" placeholder="Search IP, country, family…" autocomplete="off" spellcheck="false"/>
+        <button id="search-clear" title="Clear search">✕</button>
+      </div>
       <div id="feed-list"></div>
       <div id="filter-bar">
         <button class="filter-btn active" data-f="all">All</button>
@@ -114,6 +118,44 @@
         <button class="map-btn" id="btn-export" title="Export PNG snapshot (E)">Export</button>
         <button class="map-btn" id="btn-csv" title="Export CSV feed (X)">CSV</button>
       </div>
+
+      <!-- COUNTRY DETAIL DRAWER -->
+      <div id="country-drawer">
+        <div id="d-header">
+          <span id="d-flag"></span>
+          <span id="d-cname">—</span>
+          <button id="d-close">✕</button>
+        </div>
+        <div id="d-stats-row">
+          <div class="d-stat">
+            <div class="d-stat-val red" id="d-out">0</div>
+            <div class="d-stat-lbl">Attacks Out</div>
+          </div>
+          <div class="d-stat">
+            <div class="d-stat-val cyan" id="d-in">0</div>
+            <div class="d-stat-lbl">Attacks In</div>
+          </div>
+          <div class="d-stat">
+            <div class="d-stat-val" id="d-threat" style="font-size:11px;white-space:nowrap">—</div>
+            <div class="d-stat-lbl">Top Threat</div>
+          </div>
+        </div>
+        <div class="d-section-title">Attack Types</div>
+        <div id="d-breakdown">
+          <div class="bd-row"><span class="bd-label">Malware</span><div class="bd-track"><div class="bd-fill" id="dbd-malware" style="background:var(--red)"></div></div><span class="bd-pct red" id="dbpct-malware">0%</span></div>
+          <div class="bd-row"><span class="bd-label">DDoS</span><div class="bd-track"><div class="bd-fill" id="dbd-ddos" style="background:var(--amber)"></div></div><span class="bd-pct amber" id="dbpct-ddos">0%</span></div>
+          <div class="bd-row"><span class="bd-label">Phishing</span><div class="bd-track"><div class="bd-fill" id="dbd-phishing" style="background:var(--purple)"></div></div><span class="bd-pct purple" id="dbpct-phishing">0%</span></div>
+          <div class="bd-row"><span class="bd-label">Recon</span><div class="bd-track"><div class="bd-fill" id="dbd-recon" style="background:var(--accent)"></div></div><span class="bd-pct accent" id="dbpct-recon">0%</span></div>
+          <div class="bd-row"><span class="bd-label">C2</span><div class="bd-track"><div class="bd-fill" id="dbd-c2" style="background:var(--green)"></div></div><span class="bd-pct green" id="dbpct-c2">0%</span></div>
+          <div class="bd-row"><span class="bd-label">Exploit</span><div class="bd-track"><div class="bd-fill" id="dbd-exploit" style="background:#ff8844"></div></div><span class="bd-pct orange" id="dbpct-exploit">0%</span></div>
+        </div>
+        <div class="d-section-title">Top Targets</div>
+        <div id="d-targets"><div class="d-empty">—</div></div>
+        <div class="d-section-title">Targeted By</div>
+        <div id="d-sources"><div class="d-empty">—</div></div>
+        <div class="d-section-title">Recent Indicators</div>
+        <div id="d-events"><div class="d-empty">—</div></div>
+      </div>
     </main>
 
     <!-- RIGHT PANEL -->
@@ -154,6 +196,8 @@
       <div id="timeline-wrap">
         <div class="timeline-label">Attack Rate — 60s</div>
         <canvas id="timeline-canvas"></canvas>
+        <div class="timeline-label" style="margin-top:10px">Attack History — 24h</div>
+        <canvas id="history-canvas"></canvas>
       </div>
 
       <div id="breakdown">

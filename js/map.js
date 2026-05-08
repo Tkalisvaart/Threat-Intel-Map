@@ -208,6 +208,26 @@ window.AzimuthMap = (() => {
       }
     });
     container.addEventListener('mouseleave', () => { tt.style.display = 'none'; });
+
+    let _clickOrigin = null;
+    container.addEventListener('mousedown', e => { _clickOrigin = { x: e.clientX, y: e.clientY }; });
+    container.addEventListener('click', e => {
+      if (!_clickOrigin) return;
+      const moved = Math.hypot(e.clientX - _clickOrigin.x, e.clientY - _clickOrigin.y);
+      _clickOrigin = null;
+      if (moved > 6 || globeMode) return;
+      const r  = container.getBoundingClientRect();
+      const mx = e.clientX - r.left;
+      const my = e.clientY - r.top;
+      for (const [name, coords] of Object.entries(GEO)) {
+        const pt = proj(coords);
+        if (!pt) continue;
+        if (Math.hypot(pt[0] - mx, pt[1] - my) < 16) {
+          if (window.AzimuthDrawer) window.AzimuthDrawer.open(name);
+          break;
+        }
+      }
+    });
   }
 
   /* ── Arc management ─────────────────────────────────────────── */
