@@ -230,6 +230,16 @@ window.AzimuthMap = (() => {
     });
   }
 
+  /* ── Globe visibility check ────────────────────────────────── */
+  // D3's proj([lon,lat]) does NOT return null for back-hemisphere points in
+  // orthographic mode — it still projects them to screen coords inside the
+  // circle. Use geoDistance to check whether a point is on the visible side.
+  function isGlobeVisible(lonLat) {
+    if (!globeMode) return true;
+    const center = [-globeRot[0], -globeRot[1]];
+    return d3.geoDistance(lonLat, center) < Math.PI / 2 + 0.01;
+  }
+
   /* ── Arc management ─────────────────────────────────────────── */
   function addArc(attack) {
     const srcGeo = (attack.lat && attack.lon) ? [attack.lon, attack.lat] : GEO[attack.src];
@@ -414,6 +424,7 @@ window.AzimuthMap = (() => {
       srcBuckets[key].count++;
     });
     Object.values(srcBuckets).forEach(({ lon, lat, count }) => {
+      if (!isGlobeVisible([lon, lat])) return;
       const pt = proj([lon, lat]);
       if (!pt) return;
       drawHeatPoint(c, pt[0], pt[1], count, 255, 51, 85);
@@ -423,6 +434,7 @@ window.AzimuthMap = (() => {
     Object.entries(window.AzimuthFeed.getTargetMap()).forEach(([country, count]) => {
       const geo = GEO[country];
       if (!geo) return;
+      if (!isGlobeVisible(geo)) return;
       const pt = proj(geo);
       if (!pt) return;
       drawHeatPoint(c, pt[0], pt[1], count, 0, 180, 255);
@@ -464,6 +476,7 @@ window.AzimuthMap = (() => {
       if (!paused) arc.progress = Math.min(1, arc.progress + arc.speed);
 
       if (globeMode) {
+        if (!isGlobeVisible(arc.srcGeo) || !isGlobeVisible(arc.tgtGeo)) return;
         const sp = proj(arc.srcGeo);
         const tp = proj(arc.tgtGeo);
         if (!sp || !tp) return;
@@ -492,9 +505,11 @@ window.AzimuthMap = (() => {
       const cx = mapW / 2, cy = mapH / 2;
       const MAX_LIFT = 0.18;
       for (let i = 0; i <= N; i++) {
-        const t  = progress * i / N;
-        const pt = proj(interp(t));
-        if (!pt) continue;
+        const t   = progress * i / N;
+        const geo = interp(t);
+        if (!isGlobeVisible(geo)) break;   // stop path at the horizon
+        const pt = proj(geo);
+        if (!pt) break;
         const lift = MAX_LIFT * Math.sin(Math.PI * t);
         pts.push([cx + (pt[0] - cx) * (1 + lift), cy + (pt[1] - cy) * (1 + lift)]);
       }
