@@ -18,16 +18,28 @@ jobs:
         run: pip install geoip2
 
       - name: Download MaxMind GeoLite2 databases
+        continue-on-error: true
         env:
           MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
         run: |
-          [ -z "$MAXMIND_LICENSE_KEY" ] && echo "Skipping MaxMind (MAXMIND_LICENSE_KEY not set)" && exit 0
+          if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+            echo "Skipping MaxMind (MAXMIND_LICENSE_KEY not set) — will use ip-api.com fallback"
+            exit 0
+          fi
           for DB in GeoLite2-City GeoLite2-ASN; do
+            TMPFILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -w "%{http_code}" -o "$TMPFILE" \
+              "https://download.maxmind.com/app/geoip_download?edition_id=${DB}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz")
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "MaxMind download failed for ${DB}: HTTP ${HTTP_CODE}"
+              echo "Check that your license key is valid and you have accepted the GeoLite2 EULA at maxmind.com"
+              rm -f "$TMPFILE"
+              exit 1
+            fi
             DIR=$(mktemp -d)
-            curl -sS "https://download.maxmind.com/app/geoip_download?edition_id=${DB}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz" \
-              | tar -xz -C "$DIR"
+            tar -xz -C "$DIR" < "$TMPFILE"
             find "$DIR" -name "*.mmdb" -exec cp {} . \;
-            rm -rf "$DIR"
+            rm -rf "$DIR" "$TMPFILE"
             echo "${DB}.mmdb ready"
           done
 
