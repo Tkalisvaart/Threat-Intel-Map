@@ -324,9 +324,10 @@ window.AzimuthMap = (() => {
         ctx.arc(mapW / 2, mapH / 2, sc - 0.5, 0, Math.PI * 2);
         ctx.clip();
 
-        // City dots
+        // City dots — only on the visible hemisphere
         const visPts = [];
         Object.values(GEO).forEach(([lon, lat]) => {
+          if (!isGlobeVisible([lon, lat])) return;
           const pt = proj([lon, lat]);
           if (pt) visPts.push(pt);
         });
