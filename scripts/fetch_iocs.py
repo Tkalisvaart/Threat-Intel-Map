@@ -481,19 +481,25 @@ def fetch_abuseipdb(api_key):
     return events
 
 
-def fetch_threatfox():
-    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch) — no API key required."""
+def fetch_threatfox(api_key=''):
+    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch). Requires a free API key."""
     payload = json.dumps({'query': 'get_iocs', 'days': 1}).encode()
+    headers = {'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'}
+    if api_key:
+        headers['Auth-Key'] = api_key
     req = urllib.request.Request(
         'https://threatfox-api.abuse.ch/api/v1/',
         data=payload,
-        headers={'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'},
+        headers=headers,
         method='POST',
     )
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
 
-    if data.get('query_status') != 'ok':
+    status = data.get('query_status')
+    if status in ('unknown_auth_key', 'unauthorized'):
+        raise ValueError('ThreatFox API key invalid or missing — get a free key at abuse.ch/register')
+    if status != 'ok':
         return []
 
     iocs = data.get('data', []) or []
@@ -679,13 +685,17 @@ def main():
     else:
         print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
 
-    print('Fetching ThreatFox...')
-    try:
-        tf = fetch_threatfox()
-        events.extend(tf)
-        print(f'  {len(tf)} indicators')
-    except Exception as e:
-        print(f'  ThreatFox failed: {e}')
+    threatfox_key = os.environ.get('THREATFOX_KEY', '')
+    if threatfox_key:
+        print('Fetching ThreatFox...')
+        try:
+            tf = fetch_threatfox(threatfox_key)
+            events.extend(tf)
+            print(f'  {len(tf)} indicators')
+        except Exception as e:
+            print(f'  ThreatFox failed: {e}')
+    else:
+        print('Skipping ThreatFox (THREATFOX_KEY not set — get a free key at abuse.ch/register)')
 
     print('Fetching URLhaus...')
     try:
