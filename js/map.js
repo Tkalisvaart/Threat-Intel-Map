@@ -508,10 +508,8 @@ window.AzimuthMap = (() => {
       const cx = mapW / 2, cy = mapH / 2;
       const MAX_LIFT = 0.30;
       for (let i = 0; i <= N; i++) {
-        const t   = progress * i / N;
-        const geo = interp(t);
-        if (!isGlobeVisible(geo)) break;   // stop path at the horizon
-        const pt = proj(geo);
+        const t  = progress * i / N;
+        const pt = proj(interp(t));
         if (!pt) break;
         const lift = MAX_LIFT * Math.sin(Math.PI * t);
         pts.push([cx + (pt[0] - cx) * (1 + lift), cy + (pt[1] - cy) * (1 + lift)]);
