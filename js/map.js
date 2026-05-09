@@ -342,11 +342,13 @@ window.AzimuthMap = (() => {
         ctx.stroke();
 
         if (showHeat) drawHeat();
-        if (showArcs) drawArcs();
         drawPulseRings();
         drawParticles();
 
         ctx.restore();
+
+        // Arcs drawn outside the globe clip so they can float above the surface
+        if (showArcs) drawArcs();
       } else {
         if (showHeat) drawHeat();
         if (showArcs) drawArcs();
@@ -504,7 +506,7 @@ window.AzimuthMap = (() => {
     if (globeMode && arc.srcGeo && arc.tgtGeo) {
       const interp  = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
       const cx = mapW / 2, cy = mapH / 2;
-      const MAX_LIFT = 0.18;
+      const MAX_LIFT = 0.30;
       for (let i = 0; i <= N; i++) {
         const t   = progress * i / N;
         const geo = interp(t);
