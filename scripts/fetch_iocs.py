@@ -175,8 +175,7 @@ def fetch_feodo():
         ip         = e.get('ip_address', '')
         family     = e.get('malware', '')
         first_seen = (e.get('first_seen') or '')[:10]
-        for _ in range(random.randint(4, 7)):
-            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family, 'first_seen': first_seen})
+        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family, 'first_seen': first_seen})
     return events
 
 
@@ -245,8 +244,7 @@ def fetch_openphish():
         src = ip_to_country.get(ip)
         if src and ip not in seen_ips:
             seen_ips.add(ip)
-            for _ in range(random.randint(2, 5)):
-                events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip, 'family': 'Phishing Site', 'first_seen': ''})
+            events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip, 'family': 'Phishing Site', 'first_seen': ''})
     return events
 
 
@@ -286,8 +284,7 @@ def fetch_blocklist_de():
     for ip, mtype, family_label in ip_entries:
         src = geo.get(ip)
         if src:
-            for _ in range(random.randint(2, 4)):
-                events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family_label, 'first_seen': ''})
+            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family_label, 'first_seen': ''})
     return events
 
 
@@ -312,8 +309,7 @@ def fetch_emerging_threats():
     for ip in sample:
         src = geo.get(ip)
         if src:
-            for _ in range(random.randint(2, 4)):
-                events.append({'src': src, 'tgt': pick_target('malware', src), 'type': 'malware', 'ip': ip, 'family': 'Compromised Host', 'first_seen': ''})
+            events.append({'src': src, 'tgt': pick_target('malware', src), 'type': 'malware', 'ip': ip, 'family': 'Compromised Host', 'first_seen': ''})
     return events
 
 
@@ -364,8 +360,8 @@ def fetch_abuseipdb(api_key):
         ip         = entry.get('ipAddress', '')
         mtype      = pick_type(entry.get('categories', []))
         first_seen = (entry.get('lastReportedAt') or '')[:10]
-        for _ in range(random.randint(2, 4)):
-            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen})
+        confidence = entry.get('abuseConfidenceScore', 0)
+        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen, 'confidence': confidence})
     return events
 
 
@@ -416,12 +412,24 @@ def main():
     else:
         print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
 
+    # Deduplicate by IP — keep first (richest) entry per IP across all feeds
+    seen_ips: set = set()
+    deduped = []
+    for e in events:
+        ip = e.get('ip', '')
+        if ip and ip in seen_ips:
+            continue
+        if ip:
+            seen_ips.add(ip)
+        deduped.append(e)
+    events = deduped
+
     random.shuffle(events)
 
     out = Path(__file__).parent.parent / 'data' / 'iocs.json'
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(events, separators=(',', ':')))
-    print(f'Wrote {len(events)} events → {out}')
+    print(f'Wrote {len(events)} indicators → {out}')
 
 
 if __name__ == '__main__':

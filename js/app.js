@@ -3,13 +3,12 @@
  */
 
 (async () => {
-  const { TYPES, GEO, SCENARIOS } = window.AZIMUTH_DATA;
+  const { TYPES, GEO } = window.AZIMUTH_DATA;
 
   let paused   = false;
   let showArcs = true;
   let showHeat = true;
   let theater  = false;
-  let simTimer = null;
 
   let _dataLastModified = null;
   let _rawEvents = [];  // full dataset from last successful iocs.json load
@@ -44,29 +43,13 @@
   await AzimuthMap.init();
 
   /* ── Spawn an attack ────────────────────────────────────────── */
-  function spawnAttack(scenario) {
-    const s        = scenario || SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
-    const typeInfo = TYPES[s.type];
-    if (!GEO[s.src] || !GEO[s.tgt]) return;
-
-    const attack = { ...s, color: typeInfo.color };
+  function spawnAttack(ev) {
+    const typeInfo = TYPES[ev.type];
+    if (!typeInfo || !GEO[ev.src] || !GEO[ev.tgt]) return;
+    const attack = { ...ev, color: typeInfo.color };
     AzimuthFeed.addEvent(attack);
     AzimuthMap.addArc(attack);
   }
-
-  /* ── Simulation loop ────────────────────────────────────────── */
-  function scheduleNext() {
-    const delay = 700 + Math.random() * 1300;
-    simTimer = setTimeout(() => {
-      if (!paused) spawnAttack();
-      scheduleNext();
-    }, delay);
-  }
-
-  SCENARIOS.slice(0, 8).forEach((s, i) => {
-    setTimeout(() => spawnAttack(s), i * 350 + 200);
-  });
-  setTimeout(scheduleNext, 3200);
 
   /* ── Filter buttons ─────────────────────────────────────────── */
   document.getElementById('filter-bar').addEventListener('click', e => {
@@ -187,12 +170,12 @@
       const targets = window.AzimuthFeed.getTopTargetsOf(country);
       document.getElementById('d-targets').innerHTML = targets.length
         ? targets.map(([c, n]) => `<div class="d-row"><span class="d-row-flag">${FLAGS[c]||'🌐'}</span><span class="d-row-country">${c}</span><span class="d-row-count">${n}</span></div>`).join('')
-        : '<div class="d-empty">No outbound events yet</div>';
+        : '<div class="d-empty">No indicators yet</div>';
 
       const sources = window.AzimuthFeed.getTopSourcesOf(country);
       document.getElementById('d-sources').innerHTML = sources.length
         ? sources.map(([c, n]) => `<div class="d-row"><span class="d-row-flag">${FLAGS[c]||'🌐'}</span><span class="d-row-country">${c}</span><span class="d-row-count">${n}</span></div>`).join('')
-        : '<div class="d-empty">No inbound events yet</div>';
+        : '<div class="d-empty">No exposure data yet</div>';
 
       const events = window.AzimuthFeed.getAllEvents()
         .filter(e => e.src === country || e.tgt === country)
@@ -260,7 +243,7 @@
         if (row) row.querySelector('.ip-dot').classList.remove('active');
       });
       const upd = document.getElementById('ipc-updated');
-      if (upd) upd.textContent = 'Simulation mode — no live data loaded';
+      if (upd) upd.textContent = 'No live data available';
       return;
     }
 
@@ -500,7 +483,6 @@
 
   // --- REAL CTI FEED ---
   // data/iocs.json is refreshed hourly by GitHub Actions (scripts/fetch_iocs.py).
-  // Same-origin fetch — no CORS issues. Falls back to simulation if file is empty.
 
   function setRealFeedStats(events) {
     window.AZIMUTH_REALSTATS = true;
@@ -520,28 +502,42 @@
     const uniqueIPSet = new Set(valid.filter(e => e.ip).map(e => e.ip));
     set('r-unique', uniqueIPSet.size.toLocaleString());
 
-    let crit = 0, high = 0, med = 0;
-    valid.forEach(e => {
-      const t = TYPES[e.type];
-      if (!t) return;
-      if      (t.severity === 'CRITICAL') crit++;
-      else if (t.severity === 'HIGH')     high++;
-      else                                med++;
-    });
-    set('r-critical', crit);
-    set('r-high',     high);
-    set('r-medium',   med);
+    // High-confidence indicators (AbuseIPDB confidence >= 90)
+    const highConf = valid.filter(e => (e.confidence || 0) >= 90).length;
+    set('r-highconf', highConf.toLocaleString());
 
-    // Global threat level based on critical ratio
+    // Intel source breakdown (mapped from family field)
+    const blocklistFamilies = new Set(['SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam']);
+    const feedCounts = {
+      feodo:          valid.filter(e => e.type === 'c2' && (e.family || '') !== 'AbuseIPDB').length,
+      openphish:      valid.filter(e => e.family === 'Phishing Site').length,
+      blocklist:      valid.filter(e => blocklistFamilies.has(e.family || '')).length,
+      emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
+      abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
+    };
+    const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length;
+    set('r-feeds', `${activeFeeds}/5`);
+
+    // Fresh IOCs: first_seen within last 7 days
+    const now = Date.now();
+    const freshCount = valid.filter(e => {
+      if (!e.first_seen) return false;
+      const d = new Date(e.first_seen);
+      return !isNaN(d) && (now - d) <= 7 * 86400000;
+    }).length;
+    set('r-fresh', freshCount.toLocaleString());
+
+    // Global threat level — based on C2/exploit ratio (highest-risk types)
     const sevEl = document.getElementById('ts-severity');
     if (sevEl) {
-      const ratio = crit / (valid.length || 1);
-      const level = ratio > 0.35 ? 'CRITICAL' : ratio > 0.15 ? 'HIGH' : 'ELEVATED';
+      const c2exploit = valid.filter(e => e.type === 'c2' || e.type === 'exploit').length;
+      const ratio = c2exploit / (valid.length || 1);
+      const level = ratio > 0.4 ? 'CRITICAL' : ratio > 0.2 ? 'HIGH' : 'ELEVATED';
       sevEl.textContent = level;
       sevEl.className   = 'top-stat-val ' + (level === 'CRITICAL' ? 'red' : level === 'HIGH' ? 'amber' : 'green');
     }
 
-    // Attack type breakdown from real data
+    // Indicator type breakdown from real data
     const typeMap = {};
     valid.forEach(e => { if (e.type) typeMap[e.type] = (typeMap[e.type] || 0) + 1; });
     const total = valid.length || 1;
@@ -555,15 +551,9 @@
 
     window.AZIMUTH_TYPEMAP = typeMap;
 
-    // Intel source breakdown (mapped from family field)
-    const blocklistFamilies = new Set(['SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam']);
     window.AZIMUTH_SOURCES = {
-      feodo:          valid.filter(e => e.type === 'c2' && (e.family || '') !== 'AbuseIPDB').length,
-      openphish:      valid.filter(e => e.family === 'Phishing Site').length,
-      blocklist:      valid.filter(e => blocklistFamilies.has(e.family || '')).length,
-      emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
-      abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
-      updatedAt:      _dataLastModified,
+      ...feedCounts,
+      updatedAt: _dataLastModified,
     };
   }
 
@@ -588,13 +578,13 @@
       const res = await fetch('./data/iocs.json', { cache: 'no-cache', headers });
 
       if (res.status === 304) return; // not modified — skip re-processing
-      if (!res.ok) { setIntelSource('SIMULATION', false); return; }
+      if (!res.ok) { setIntelSource('NO DATA', false); return; }
 
       const lm = res.headers.get('Last-Modified');
       if (lm) _dataLastModified = lm;
 
       const events = await res.json();
-      if (!Array.isArray(events) || events.length === 0) { setIntelSource('SIMULATION', false); return; }
+      if (!Array.isArray(events) || events.length === 0) { setIntelSource('NO DATA', false); return; }
 
       _rawEvents = events;
       setRealFeedStats(events);
@@ -609,7 +599,7 @@
       setIntelSource('LIVE INTEL', true);
       console.log(`[Threat Intel] ${events.length} events loaded`);
     } catch (_) {
-      setIntelSource('SIMULATION', false);
+      setIntelSource('NO DATA', false);
     }
   }
 

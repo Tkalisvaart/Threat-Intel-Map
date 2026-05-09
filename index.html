@@ -50,15 +50,15 @@
 
       <div class="top-stat">
         <span class="top-stat-val" id="ts-total">0</span>
-        <span class="top-stat-lbl">Total Attacks</span>
+        <span class="top-stat-lbl">Total Indicators</span>
       </div>
       <div class="top-stat">
-        <span class="top-stat-val" id="ts-rate">0</span>
-        <span class="top-stat-lbl">Attacks / min</span>
+        <span class="top-stat-val" id="ts-rate">—</span>
+        <span class="top-stat-lbl">Indicators / min</span>
       </div>
       <div class="top-stat">
         <span class="top-stat-val" id="ts-countries">0</span>
-        <span class="top-stat-lbl">Source Countries</span>
+        <span class="top-stat-lbl">Countries</span>
       </div>
       <div class="top-stat">
         <span class="top-stat-val red" id="ts-severity">CRITICAL</span>
@@ -118,8 +118,8 @@
     <!-- LEFT PANEL -->
     <aside id="left">
       <div class="panel-header">
-        <span class="panel-title">Attack Feed</span>
-        <span class="panel-count" id="feed-count">0 events</span>
+        <span class="panel-title">Indicator Feed</span>
+        <span class="panel-count" id="feed-count">0 indicators</span>
       </div>
       <div id="search-wrap">
         <input type="text" id="feed-search" placeholder="Search IP, country, family…" autocomplete="off" spellcheck="false"/>
@@ -148,8 +148,8 @@
 
       <div id="tooltip">
         <div class="tt-country" id="tt-country"></div>
-        <div class="tt-row"><span>Attacks out</span><span class="tt-val" id="tt-out">0</span></div>
-        <div class="tt-row"><span>Attacks in</span><span class="tt-val" id="tt-in">0</span></div>
+        <div class="tt-row"><span>IOCs</span><span class="tt-val" id="tt-out">0</span></div>
+        <div class="tt-row"><span>Exposed</span><span class="tt-val" id="tt-in">0</span></div>
         <div class="tt-row"><span>Top threat</span><span class="tt-val" id="tt-threat">—</span></div>
       </div>
 
@@ -161,8 +161,8 @@
       </div>
 
       <div id="heat-legend">
-        <div class="hl-item"><span class="hl-dot hl-red"></span>Attack Source</div>
-        <div class="hl-item"><span class="hl-dot hl-cyan"></span>Attack Target</div>
+        <div class="hl-item"><span class="hl-dot hl-red"></span>IOC Origin</div>
+        <div class="hl-item"><span class="hl-dot hl-cyan"></span>Reported Target</div>
       </div>
 
       <div id="map-controls-right">
@@ -182,18 +182,18 @@
         <div id="d-stats-row">
           <div class="d-stat">
             <div class="d-stat-val red" id="d-out">0</div>
-            <div class="d-stat-lbl">Attacks Out</div>
+            <div class="d-stat-lbl">IOCs</div>
           </div>
           <div class="d-stat">
             <div class="d-stat-val cyan" id="d-in">0</div>
-            <div class="d-stat-lbl">Attacks In</div>
+            <div class="d-stat-lbl">Exposed</div>
           </div>
           <div class="d-stat">
             <div class="d-stat-val" id="d-threat" style="font-size:11px;white-space:nowrap">—</div>
             <div class="d-stat-lbl">Top Threat</div>
           </div>
         </div>
-        <div class="d-section-title">Attack Types</div>
+        <div class="d-section-title">Indicator Types</div>
         <div id="d-breakdown">
           <div class="bd-row"><span class="bd-label">Malware</span><div class="bd-track"><div class="bd-fill" id="dbd-malware" style="background:var(--red)"></div></div><span class="bd-pct red" id="dbpct-malware">0%</span></div>
           <div class="bd-row"><span class="bd-label">DDoS</span><div class="bd-track"><div class="bd-fill" id="dbd-ddos" style="background:var(--amber)"></div></div><span class="bd-pct amber" id="dbpct-ddos">0%</span></div>
@@ -202,9 +202,9 @@
           <div class="bd-row"><span class="bd-label">C2</span><div class="bd-track"><div class="bd-fill" id="dbd-c2" style="background:var(--green)"></div></div><span class="bd-pct green" id="dbpct-c2">0%</span></div>
           <div class="bd-row"><span class="bd-label">Exploit</span><div class="bd-track"><div class="bd-fill" id="dbd-exploit" style="background:#ff8844"></div></div><span class="bd-pct orange" id="dbpct-exploit">0%</span></div>
         </div>
-        <div class="d-section-title">Top Targets</div>
+        <div class="d-section-title">Common Targets</div>
         <div id="d-targets"><div class="d-empty">—</div></div>
-        <div class="d-section-title">Targeted By</div>
+        <div class="d-section-title">Common Sources</div>
         <div id="d-sources"><div class="d-empty">—</div></div>
         <div class="d-section-title">Recent Indicators</div>
         <div id="d-events"><div class="d-empty">—</div></div>
@@ -217,44 +217,44 @@
 
       <div id="stats-grid">
         <div class="stat-cell">
-          <div class="stat-num red" id="r-critical">0</div>
-          <div class="stat-lbl">Critical</div>
-        </div>
-        <div class="stat-cell alt">
-          <div class="stat-num amber" id="r-high">0</div>
-          <div class="stat-lbl">High</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-num" id="r-medium">0</div>
-          <div class="stat-lbl">Medium</div>
-        </div>
-        <div class="stat-cell alt">
           <div class="stat-num purple" id="r-unique">0</div>
           <div class="stat-lbl">Unique IPs</div>
+        </div>
+        <div class="stat-cell alt">
+          <div class="stat-num green" id="r-highconf">0</div>
+          <div class="stat-lbl">High Conf</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num amber" id="r-feeds">—</div>
+          <div class="stat-lbl">Active Feeds</div>
+        </div>
+        <div class="stat-cell alt">
+          <div class="stat-num" id="r-fresh">0</div>
+          <div class="stat-lbl">Fresh IOCs</div>
         </div>
       </div>
 
       <div class="panel-header panel-header-split">
-        <span class="panel-title">Top Attackers</span>
-        <span class="panel-title-sub">outbound</span>
+        <span class="panel-title">IOC Origins</span>
+        <span class="panel-title-sub">by country</span>
       </div>
       <div id="attackers"></div>
 
       <div class="panel-header panel-header-split">
-        <span class="panel-title">Top Targets</span>
-        <span class="panel-title-sub">inbound</span>
+        <span class="panel-title">Top Families</span>
+        <span class="panel-title-sub">by indicator count</span>
       </div>
       <div id="targets"></div>
 
       <div id="timeline-wrap">
         <div class="timeline-label">Activity — 30 min</div>
         <canvas id="timeline-canvas"></canvas>
-        <div class="timeline-label" style="margin-top:12px">Attack Distribution</div>
+        <div class="timeline-label" style="margin-top:12px">Type Distribution</div>
         <canvas id="history-canvas"></canvas>
       </div>
 
       <div id="breakdown">
-        <div class="breakdown-title">Attack Types</div>
+        <div class="breakdown-title">Indicator Types</div>
         <div class="bd-row">
           <span class="bd-label">Malware</span>
           <div class="bd-track"><div class="bd-fill" id="bd-malware" style="background:var(--red)"></div></div>

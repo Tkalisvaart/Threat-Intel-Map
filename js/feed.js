@@ -8,13 +8,11 @@ window.AzimuthFeed = (() => {
   const MAX_FEED = 80;
 
   let feedItems    = [];
-  let attackerMap  = {};  // country → count (outbound)
-  let targetMap    = {};  // country → count (inbound)
+  let attackerMap  = {};  // country → count (IOC origin)
+  let targetMap    = {};  // country → count (estimated target, kept for drawer)
   let typeMap      = {};  // type → count
+  let familyMap    = {};  // family → count
   let uniqueIPs    = new Set();
-  let critCount    = 0;
-  let highCount    = 0;
-  let medCount     = 0;
   let totalCount   = 0;
   let perMinute    = [];  // timestamps for rate calc
   let minuteHistory = []; // [{min, count, types:{}}] — last 30 minutes
@@ -31,11 +29,8 @@ window.AzimuthFeed = (() => {
     attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
     targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
     typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
+    if (attack.family) familyMap[attack.family] = (familyMap[attack.family] || 0) + 1;
     uniqueIPs.add(ip);
-
-    if      (typeInfo.severity === 'CRITICAL') critCount++;
-    else if (typeInfo.severity === 'HIGH')     highCount++;
-    else                                       medCount++;
 
     perMinute.push(now);
     perMinute = perMinute.filter(t => now - t < 60_000);
@@ -50,13 +45,13 @@ window.AzimuthFeed = (() => {
       if (minuteHistory.length > 30) minuteHistory.shift();
     }
 
-    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), severity: typeInfo.severity, family: attack.family || '', first_seen: attack.first_seen || '' });
+    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), family: attack.family || '', first_seen: attack.first_seen || '', confidence: attack.confidence || 0 });
     if (feedItems.length > MAX_FEED) feedItems.pop();
 
     renderFeed();
     renderStats();
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
-    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
+    renderTopFamilies();
     renderBreakdown();
   }
 
@@ -78,14 +73,16 @@ window.AzimuthFeed = (() => {
       );
     }
 
-    document.getElementById('feed-count').textContent = items.length + ' events';
+    document.getElementById('feed-count').textContent = items.length + ' indicators';
 
     list.innerHTML = '';
     items.slice(0, 35).forEach((item, i) => {
-      const t   = TYPES[item.type];
-      const sev = item.severity;
-      const sevColor = sev === 'CRITICAL' ? 'var(--red)' : sev === 'HIGH' ? 'var(--amber)' : 'var(--text2)';
-      const vtUrl = `https://www.virustotal.com/gui/ip-address/${item.ip}`;
+      const t      = TYPES[item.type];
+      const vtUrl  = `https://www.virustotal.com/gui/ip-address/${item.ip}`;
+      const age    = ageStr(item.first_seen);
+      const confBadge = item.confidence >= 90
+        ? `<span class="fi-conf">CONF ${item.confidence}%</span>`
+        : '';
 
       const div = document.createElement('div');
       div.className = 'feed-item' + (i === 0 ? ' new-item' : '');
@@ -95,28 +92,23 @@ window.AzimuthFeed = (() => {
         <span class="fi-src" data-country="${item.src}" role="button">${item.src}</span>
         <span class="fi-arr">→</span>
         <span class="fi-tgt" data-country="${item.tgt}" role="button">${item.tgt}</span>
-        <span class="fi-time">${item.time}</span>
+        ${age ? `<span class="fi-time">${age}</span>` : ''}
       </div>
       <div class="fi-bot">
         <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>
         ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
-        <span class="fi-sev" style="color:${sevColor}">${sev}</span>
+        ${confBadge}
       </div>`;
       list.appendChild(div);
     });
   }
 
   function renderStats() {
-    const rate = perMinute.length;
-    setText('ts-rate',  rate);
+    setText('ts-rate',  perMinute.length);
     setText('r-unique', uniqueIPs.size);
-    // When real feed data is loaded, it controls these fields
     if (!window.AZIMUTH_REALSTATS) {
       setText('ts-total',     totalCount.toLocaleString());
       setText('ts-countries', Object.keys(attackerMap).length);
-      setText('r-critical',   critCount);
-      setText('r-high',       highCount);
-      setText('r-medium',     medCount);
     }
   }
 
@@ -134,6 +126,22 @@ window.AzimuthFeed = (() => {
           <div class="${barCls}" style="width:${Math.round(count / max * 100)}%"></div>
         </div>
         <span class="${cntCls}">${count}</span>
+      </div>`).join('');
+  }
+
+  function renderTopFamilies() {
+    const el = document.getElementById('targets');
+    if (!el) return;
+    const sorted = Object.entries(familyMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const max = sorted[0] ? sorted[0][1] : 1;
+    el.innerHTML = sorted.map(([family, count], i) => `
+      <div class="attacker-row">
+        <span class="att-rank">${i + 1}</span>
+        <span class="att-country fam-name">${family}</span>
+        <div class="att-bar-wrap">
+          <div class="tgt-bar" style="width:${Math.round(count / max * 100)}%"></div>
+        </div>
+        <span class="tgt-count">${count}</span>
       </div>`).join('');
   }
 
@@ -187,6 +195,17 @@ window.AzimuthFeed = (() => {
   }
 
   /* ── Helpers ─────────────────────────────────────────────────── */
+  function ageStr(first_seen) {
+    if (!first_seen) return '';
+    const d = new Date(first_seen);
+    if (isNaN(d)) return '';
+    const days = Math.floor((Date.now() - d) / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return '1d ago';
+    if (days < 30)  return `${days}d ago`;
+    return `${Math.floor(days / 7)}w ago`;
+  }
+
   function randomIP() {
     return `${rr(1,254)}.${rr(0,254)}.${rr(0,254)}.${rr(1,254)}`;
   }
@@ -206,10 +225,10 @@ window.AzimuthFeed = (() => {
     events.forEach(e => {
       if (e.src) attackerMap[e.src] = (attackerMap[e.src] || 0) + 1;
       if (e.tgt) targetMap[e.tgt]   = (targetMap[e.tgt]   || 0) + 1;
+      if (e.family) familyMap[e.family] = (familyMap[e.family] || 0) + 1;
     });
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
-    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
-    // Tell map to redraw heatmap with new data
+    renderTopFamilies();
     if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
   }
 
@@ -235,7 +254,7 @@ window.AzimuthFeed = (() => {
   function getMinuteHistory() { return minuteHistory; }
   function getTypeMap()      { return { ...typeMap }; }
 
-  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf, getTypeMap };
+  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf, getTypeMap, getFamilyMap: () => ({ ...familyMap }) };
 })();
 
 document.getElementById('feed-list').addEventListener('click', e => {

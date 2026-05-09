@@ -446,6 +446,7 @@ html, body {
 .stat-num.red    { color: var(--red); }
 .stat-num.amber  { color: var(--amber); }
 .stat-num.purple { color: var(--purple); }
+.stat-num.green  { color: var(--green); }
 
 .stat-lbl {
   font-size: 10px;
@@ -781,6 +782,16 @@ html, body { width: 100%; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-style: italic;
+}
+.fi-conf {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.fam-name {
+  font-size: 10px;
 }
 .fi-src[data-country], .fi-tgt[data-country] { cursor: pointer; }
 .fi-src[data-country]:hover { color: var(--accent); }
