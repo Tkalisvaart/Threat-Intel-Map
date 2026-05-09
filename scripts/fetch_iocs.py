@@ -562,14 +562,20 @@ def fetch_threatfox(api_key=''):
     return events
 
 
-def fetch_urlhaus():
-    """Fetch recent malware URLs from URLhaus (abuse.ch) — no API key required."""
+def fetch_urlhaus(api_key=''):
+    """Fetch recent malware URLs from URLhaus (abuse.ch). Requires a free abuse.ch API key."""
+    headers = {'User-Agent': 'azimuth-threat-map/1.0'}
+    if api_key:
+        headers['Auth-Key'] = api_key
     req = urllib.request.Request(
         'https://urlhaus-api.abuse.ch/v1/urls/recent/',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+        headers=headers,
     )
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
+
+    if data.get('query_status') == 'unknown_auth_key' or data.get('error') == 'Unauthorized':
+        raise ValueError('URLhaus API key invalid or missing — get a free key at abuse.ch/register')
 
     urls = data.get('urls', [])
     if not urls:
@@ -697,13 +703,16 @@ def main():
     else:
         print('Skipping ThreatFox (THREATFOX_KEY not set — get a free key at abuse.ch/register)')
 
-    print('Fetching URLhaus...')
-    try:
-        uh = fetch_urlhaus()
-        events.extend(uh)
-        print(f'  {len(uh)} indicators')
-    except Exception as e:
-        print(f'  URLhaus failed: {e}')
+    if threatfox_key:
+        print('Fetching URLhaus...')
+        try:
+            uh = fetch_urlhaus(threatfox_key)
+            events.extend(uh)
+            print(f'  {len(uh)} indicators')
+        except Exception as e:
+            print(f'  URLhaus failed: {e}')
+    else:
+        print('Skipping URLhaus (THREATFOX_KEY not set — same abuse.ch key used for both)')
 
     # Deduplicate by IP — keep first (richest) entry per IP across all feeds
     seen_ips: set = set()
