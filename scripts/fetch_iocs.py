@@ -4,6 +4,7 @@ Fetch threat intel from abuse.ch and write data/iocs.json.
 Run by GitHub Actions on a schedule — no CORS restrictions server-side.
 """
 import concurrent.futures
+import ipaddress
 import json
 import os
 import random
@@ -11,6 +12,22 @@ import socket
 import time
 import urllib.request
 from pathlib import Path
+
+# Load MaxMind GeoLite2 databases if available (downloaded by CI before this script runs).
+# Falls back to ip-api.com batch API when databases are absent.
+_DB_DIR = Path(__file__).parent.parent
+try:
+    import geoip2.database
+    import geoip2.errors
+    _city_reader = geoip2.database.Reader(str(_DB_DIR / 'GeoLite2-City.mmdb'))
+    _asn_reader  = geoip2.database.Reader(str(_DB_DIR / 'GeoLite2-ASN.mmdb'))
+    _USE_MAXMIND = True
+    print('GeoLite2 databases loaded — using MaxMind for geolocation')
+except Exception:
+    _city_reader = None
+    _asn_reader  = None
+    _USE_MAXMIND = False
+    print('MaxMind databases not found — falling back to ip-api.com')
 
 # Must match GEO keys in js/data.js
 KNOWN_COUNTRIES = {
@@ -116,14 +133,53 @@ def map_threat_type(raw):
     return 'malware'
 
 
-def geolocate_ips(ips):
-    """Batch-geolocate IPs via ip-api.com. Returns {ip: {country, lat, lon, city, asn}}."""
-    if not ips:
-        return {}
+def _is_public_ip(ip):
+    try:
+        return not ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return False
+
+
+def _geolocate_maxmind(ips):
+    """Geolocate IPs using local MaxMind GeoLite2 databases — no rate limits."""
+    results = {}
+    for ip in ips:
+        if not _is_public_ip(ip):
+            continue
+        try:
+            city = _city_reader.city(ip)
+            cc = city.country.iso_code or ''
+            country = ISO_TO_COUNTRY.get(cc)
+            if not country:
+                continue
+            asn_str = ''
+            if _asn_reader:
+                try:
+                    asn = _asn_reader.asn(ip)
+                    asn_str = f'AS{asn.autonomous_system_number} {asn.autonomous_system_organization}'
+                except Exception:
+                    pass
+            results[ip] = {
+                'country': country,
+                'lat':     round(city.location.latitude  or 0, 4),
+                'lon':     round(city.location.longitude or 0, 4),
+                'city':    city.city.name or '',
+                'asn':     asn_str,
+            }
+        except Exception:
+            pass
+    return results
+
+
+def _geolocate_ipapi(ips):
+    """Batch-geolocate IPs via ip-api.com free tier. Returns {ip: {country, lat, lon, city, asn}}."""
     results = {}
     chunks = [ips[i:i + 100] for i in range(0, len(ips), 100)]
     for idx, chunk in enumerate(chunks):
-        payload = json.dumps([{'query': ip} for ip in chunk]).encode()
+        payload = json.dumps([
+            {'query': ip, 'fields': 'status,country,countryCode,lat,lon,city,regionName,as,query'}
+            for ip in chunk
+        ]).encode()
         req = urllib.request.Request(
             'http://ip-api.com/batch',
             data=payload,
@@ -148,6 +204,13 @@ def geolocate_ips(ips):
     return results
 
 
+def geolocate_ips(ips):
+    """Geolocate IPs. Uses MaxMind GeoLite2 if available, falls back to ip-api.com."""
+    if not ips:
+        return {}
+    return _geolocate_maxmind(ips) if _USE_MAXMIND else _geolocate_ipapi(ips)
+
+
 def fetch_feodo():
     req = urllib.request.Request(
         'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
@@ -156,42 +219,39 @@ def fetch_feodo():
     with urllib.request.urlopen(req, timeout=20) as r:
         entries = json.loads(r.read())
 
-    mapped, unmapped = [], []
+    # Geolocate all IPs in one pass — unmapped ones need full lookup, mapped ones
+    # already have a country from Feodo's own field but still need lat/lon/ASN.
+    pre_mapped = {}  # ip → country from Feodo metadata
+    all_ips = []
     for e in entries:
+        ip = e.get('ip_address', '')
+        if not ip:
+            continue
         cc  = (e.get('country') or '').upper()
         src = ISO_TO_COUNTRY.get(cc)
         if src:
-            mapped.append((e, src))
-        elif e.get('ip_address'):
-            unmapped.append(e)
+            pre_mapped[ip] = src
+        all_ips.append(ip)
 
-    if unmapped:
-        try:
-            extra = geolocate_ips([e['ip_address'] for e in unmapped])
-            for e in unmapped:
-                g = extra.get(e['ip_address'], {})
-                src = g.get('country')
-                if src:
-                    mapped.append((e, src))
-        except Exception:
-            pass
-
-    # Enrich all mapped IPs with exact coordinates + ASN
-    all_ips = [e.get('ip_address', '') for e, _ in mapped if e.get('ip_address')]
     geo_detail = {}
     try:
-        geo_detail = geolocate_ips(all_ips)
+        geo_detail = geolocate_ips(list(set(all_ips)))
     except Exception:
         pass
 
     events = []
-    for e, src in mapped:
-        ip         = e.get('ip_address', '')
+    for e in entries:
+        ip     = e.get('ip_address', '')
+        if not ip:
+            continue
+        g   = geo_detail.get(ip, {})
+        src = g.get('country') or pre_mapped.get(ip)
+        if not src:
+            continue
         mtype      = map_malware_type(e.get('malware', ''))
         family     = e.get('malware', '')
         first_seen = (e.get('first_seen') or '')[:10]
         port       = e.get('port', 0) or 0
-        g          = geo_detail.get(ip, {})
         events.append({
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
             'ip': ip, 'family': family, 'first_seen': first_seen, 'port': port,

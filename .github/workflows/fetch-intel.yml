@@ -14,6 +14,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Python dependencies
+        run: pip install geoip2
+
+      - name: Download MaxMind GeoLite2 databases
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+        run: |
+          [ -z "$MAXMIND_LICENSE_KEY" ] && echo "Skipping MaxMind (MAXMIND_LICENSE_KEY not set)" && exit 0
+          for DB in GeoLite2-City GeoLite2-ASN; do
+            DIR=$(mktemp -d)
+            curl -sS "https://download.maxmind.com/app/geoip_download?edition_id=${DB}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz" \
+              | tar -xz -C "$DIR"
+            find "$DIR" -name "*.mmdb" -exec cp {} . \;
+            rm -rf "$DIR"
+            echo "${DB}.mmdb ready"
+          done
+
       - name: Fetch IOCs
         env:
           ABUSEIPDB_KEY: ${{ secrets.ABUSEIPDB_KEY }}

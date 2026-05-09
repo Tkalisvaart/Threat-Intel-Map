@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# MaxMind GeoLite2 databases (downloaded by CI, not committed)
+*.mmdb
+
 # OS
 .DS_Store
 Thumbs.db
