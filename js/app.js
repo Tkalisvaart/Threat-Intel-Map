@@ -141,7 +141,6 @@
 
   /* ── Export CSV ─────────────────────────────────────────────── */
   function exportCSV() {
-    const { TYPES } = window.AZIMUTH_DATA;
     const items  = _rawEvents.length ? _rawEvents : AzimuthFeed.getAllEvents();
     const header = 'Source,Target,Type,Severity,IP,Family,FirstSeen\n';
     const rows   = items.map(e => {
@@ -345,23 +344,30 @@
   });
 
   /* ── Chart helpers ──────────────────────────────────────────── */
-  const TYPE_COLORS = { malware:'#ff3355', c2:'#00ff88', exploit:'#ff8844', phishing:'#aa44ff', ddos:'#ffaa00', recon:'#00d4ff' };
-  const TYPE_ORDER  = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
+  const { TYPES: _TYPES } = window.AZIMUTH_DATA;
+  const TYPE_ORDER = ['malware', 'c2', 'exploit', 'phishing', 'ddos', 'recon'];
 
   function hexToRgba(hex, a) {
     return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;
   }
 
-  /* ── Line chart — per-type activity, last 30 min ────────────── */
-  function drawLineChart() {
-    const canvas = document.getElementById('timeline-canvas');
-    if (!canvas) return;
+  function setupChartCanvas(id) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return null;
     const W = canvas.parentElement.clientWidth - 28;
-    if (W <= 0) return;
+    if (W <= 0) return null;
     canvas.width  = W;
     canvas.height = 56;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, W, 56);
+    return { ctx, W };
+  }
+
+  /* ── Line chart — per-type activity, last 30 min ────────────── */
+  function drawLineChart() {
+    const chart = setupChartCanvas('timeline-canvas');
+    if (!chart) return;
+    const { ctx, W } = chart;
 
     const SLOTS  = 30;
     const CH     = 46;  // chart height; bottom 10px for labels
@@ -377,7 +383,7 @@
     const step = W / (SLOTS - 1);
 
     TYPE_ORDER.forEach(type => {
-      const color = TYPE_COLORS[type];
+      const color = _TYPES[type].color;
       const pts = slots.map((s, i) => ({
         x: i * step,
         y: CH - (s.types[type] || 0) / globalMax * CH
@@ -422,14 +428,9 @@
 
   /* ── Bar chart — attack type distribution ───────────────────── */
   function drawTypeBarChart() {
-    const canvas = document.getElementById('history-canvas');
-    if (!canvas) return;
-    const W = canvas.parentElement.clientWidth - 28;
-    if (W <= 0) return;
-    canvas.width  = W;
-    canvas.height = 56;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, W, 56);
+    const chart = setupChartCanvas('history-canvas');
+    if (!chart) return;
+    const { ctx, W } = chart;
 
     const CH  = 44;
     const n   = TYPE_ORDER.length;
@@ -453,7 +454,7 @@
       const val  = vals[i];
       const barH = val ? Math.max(2, Math.round((val / maxVal) * CH)) : 0;
       const x    = Math.round(i * (barW + gap));
-      const color = TYPE_COLORS[type];
+      const color = _TYPES[type].color;
 
       if (barH > 0) {
         const grad = ctx.createLinearGradient(0, CH - barH, 0, CH);

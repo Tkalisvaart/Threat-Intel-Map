@@ -372,34 +372,34 @@ window.AzimuthMap = (() => {
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
+  function drawHeatBlob(c, country, count, r, g, b) {
+    if (!GEO[country]) return;
+    const pt = proj(GEO[country]);
+    if (!pt) return;
+    const [x, y] = pt;
+    const radius = Math.min(52, 10 + count * 2.4);
+    const grad   = c.createRadialGradient(x, y, 0, x, y, radius);
+    grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
+    grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
+    grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.fillStyle = grad;
+    c.fill();
+  }
+
   function drawHeat() {
     const am = window.AzimuthFeed.getAttackerMap();
     const tm = window.AzimuthFeed.getTargetMap();
 
     if (globeMode) {
-      // Globe rotates every frame so cached pixel positions are always stale.
-      // Draw directly to the overlay with radial gradients for soft glow.
-      function blobGlobe(country, count, r, g, b) {
-        if (!GEO[country]) return;
-        const pt = proj(GEO[country]);
-        if (!pt) return;
-        const [x, y] = pt;
-        const radius = Math.min(52, 10 + count * 2.4);
-        const grad   = ctx.createRadialGradient(x, y, 0, x, y, radius);
-        grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
-        grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
-        grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = grad;
-        ctx.fill();
-      }
-      Object.entries(am).forEach(([c, n]) => blobGlobe(c, n, 255, 51, 85));
-      Object.entries(tm).forEach(([c, n]) => blobGlobe(c, n, 0, 180, 255));
+      // Globe rotates every frame — pixel positions always stale, draw directly to overlay
+      Object.entries(am).forEach(([c, n]) => drawHeatBlob(ctx, c, n, 255, 51, 85));
+      Object.entries(tm).forEach(([c, n]) => drawHeatBlob(ctx, c, n, 0, 180, 255));
       return;
     }
 
-    // Flat map — use offscreen cache with radial gradients
+    // Flat map — offscreen cache, blit when stale
     const now   = performance.now();
     const stale = now - _lastHeatTs > 800;
 
@@ -409,32 +409,15 @@ window.AzimuthMap = (() => {
     }
 
     if (!_heatOff || _heatOff.width !== mapW || _heatOff.height !== mapH) {
-      _heatOff    = document.createElement('canvas');
+      _heatOff        = document.createElement('canvas');
       _heatOff.width  = mapW;
       _heatOff.height = mapH;
-      _heatOffCtx = _heatOff.getContext('2d');
+      _heatOffCtx     = _heatOff.getContext('2d');
     }
-    const hc = _heatOffCtx;
-    hc.clearRect(0, 0, mapW, mapH);
+    _heatOffCtx.clearRect(0, 0, mapW, mapH);
 
-    function blob(country, count, r, g, b) {
-      if (!GEO[country]) return;
-      const pt = proj(GEO[country]);
-      if (!pt) return;
-      const [x, y] = pt;
-      const radius = Math.min(52, 10 + count * 2.4);
-      const grad   = hc.createRadialGradient(x, y, 0, x, y, radius);
-      grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
-      grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
-      grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
-      hc.beginPath();
-      hc.arc(x, y, radius, 0, Math.PI * 2);
-      hc.fillStyle = grad;
-      hc.fill();
-    }
-
-    Object.entries(am).forEach(([c, n]) => blob(c, n, 255, 51, 85));
-    Object.entries(tm).forEach(([c, n]) => blob(c, n, 0, 180, 255));
+    Object.entries(am).forEach(([c, n]) => drawHeatBlob(_heatOffCtx, c, n, 255, 51, 85));
+    Object.entries(tm).forEach(([c, n]) => drawHeatBlob(_heatOffCtx, c, n, 0, 180, 255));
 
     ctx.drawImage(_heatOff, 0, 0);
     _lastHeatTs = now;
@@ -502,21 +485,17 @@ window.AzimuthMap = (() => {
     ctx.save();
     ctx.globalAlpha = fade;
 
-    // Bloom layer
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '18';
-    ctx.lineWidth   = globeMode ? 6 : 8;
-    ctx.stroke();
+    function strokePts(style, width) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.strokeStyle = style;
+      ctx.lineWidth   = width;
+      ctx.stroke();
+    }
 
-    // Glow
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '3a';
-    ctx.lineWidth   = globeMode ? 2.5 : 3;
-    ctx.stroke();
+    strokePts(color + '18', globeMode ? 6 : 8);    // bloom
+    strokePts(color + '3a', globeMode ? 2.5 : 3);  // glow
 
     // Core line — gradient trail (transparent at origin, bright at head)
     ctx.beginPath();
@@ -632,13 +611,11 @@ window.AzimuthMap = (() => {
     renderSVGMap();
   }
 
-  function resize() { onResize(); }
-
   function lonLatToXY(lon, lat) {
     const pt = proj([lon, lat]);
     return pt ? { x: pt[0], y: pt[1] } : { x: 0, y: 0 };
   }
 
   return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs,
-           lonLatToXY, resize, toggleGlobe, invalidateHeat };
+           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat };
 })();

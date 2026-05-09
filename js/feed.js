@@ -55,8 +55,8 @@ window.AzimuthFeed = (() => {
 
     renderFeed();
     renderStats();
-    renderAttackers();
-    renderTargets();
+    renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
+    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
     renderBreakdown();
   }
 
@@ -120,37 +120,20 @@ window.AzimuthFeed = (() => {
     }
   }
 
-  function renderAttackers() {
-    const sorted = Object.entries(attackerMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const max    = sorted[0] ? sorted[0][1] : 1;
-
-    document.getElementById('attackers').innerHTML = sorted.map(([country, count], i) => `
-      <div class="attacker-row">
-        <span class="att-rank">${i + 1}</span>
-        <span class="att-flag">${FLAGS[country] || '🌐'}</span>
-        <span class="att-country">${country}</span>
-        <div class="att-bar-wrap">
-          <div class="att-bar" style="width:${Math.round(count / max * 100)}%"></div>
-        </div>
-        <span class="att-count">${count}</span>
-      </div>`).join('');
-  }
-
-  function renderTargets() {
-    const el = document.getElementById('targets');
+  function renderLeaderboard(dataMap, containerId, barCls, cntCls) {
+    const el = document.getElementById(containerId);
     if (!el) return;
-    const sorted = Object.entries(targetMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const sorted = Object.entries(dataMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const max    = sorted[0] ? sorted[0][1] : 1;
-
     el.innerHTML = sorted.map(([country, count], i) => `
       <div class="attacker-row">
         <span class="att-rank">${i + 1}</span>
         <span class="att-flag">${FLAGS[country] || '🌐'}</span>
         <span class="att-country">${country}</span>
         <div class="att-bar-wrap">
-          <div class="att-bar tgt-bar" style="width:${Math.round(count / max * 100)}%"></div>
+          <div class="${barCls}" style="width:${Math.round(count / max * 100)}%"></div>
         </div>
-        <span class="att-count tgt-count">${count}</span>
+        <span class="${cntCls}">${count}</span>
       </div>`).join('');
   }
 
@@ -179,13 +162,14 @@ window.AzimuthFeed = (() => {
 
   /* ── Queries ─────────────────────────────────────────────────── */
   function getCountryStats(country) {
-    const out      = attackerMap[country] || 0;
-    const inCount  = targetMap[country] || 0;
     const srcTypes = feedItems.filter(f => f.src === country).map(f => f.type);
-    const topThreat = srcTypes.length
-      ? TYPES[srcTypes.sort((a, b) => srcTypes.filter(v => v === b).length - srcTypes.filter(v => v === a).length)[0]].label
-      : null;
-    return { out, in: inCount, topThreat };
+    let topThreat = null;
+    if (srcTypes.length) {
+      const freq = {};
+      srcTypes.forEach(t => { freq[t] = (freq[t] || 0) + 1; });
+      topThreat = TYPES[Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]].label;
+    }
+    return { out: attackerMap[country] || 0, in: targetMap[country] || 0, topThreat };
   }
 
   function getAttackerMap() { return attackerMap; }
@@ -223,27 +207,22 @@ window.AzimuthFeed = (() => {
       if (e.src) attackerMap[e.src] = (attackerMap[e.src] || 0) + 1;
       if (e.tgt) targetMap[e.tgt]   = (targetMap[e.tgt]   || 0) + 1;
     });
-    renderAttackers();
-    renderTargets();
+    renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
+    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
     // Tell map to redraw heatmap with new data
     if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
   }
 
-  function getTopTargetsOf(country) {
+  function getTopCounterparts(country, filterField, countField) {
     const counts = {};
-    feedItems.filter(f => f.src === country).forEach(f => {
-      counts[f.tgt] = (counts[f.tgt] || 0) + 1;
+    feedItems.filter(f => f[filterField] === country).forEach(f => {
+      counts[f[countField]] = (counts[f[countField]] || 0) + 1;
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   }
 
-  function getTopSourcesOf(country) {
-    const counts = {};
-    feedItems.filter(f => f.tgt === country).forEach(f => {
-      counts[f.src] = (counts[f.src] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }
+  function getTopTargetsOf(country) { return getTopCounterparts(country, 'src', 'tgt'); }
+  function getTopSourcesOf(country) { return getTopCounterparts(country, 'tgt', 'src'); }
 
   function getTypeBreakdownOf(country) {
     const counts = {};

@@ -197,10 +197,6 @@ html, body {
   padding: 4px 0;
 }
 
-#feed-list::-webkit-scrollbar { width: 3px; }
-#feed-list::-webkit-scrollbar-track { background: transparent; }
-#feed-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-
 /* Feed Items */
 .feed-item {
   padding: 7px 14px;
@@ -445,6 +441,7 @@ html, body {
   font-family: var(--font-display);
   color: var(--accent);
   line-height: 1;
+  transition: color 0.3s ease;
 }
 .stat-num.red    { color: var(--red); }
 .stat-num.amber  { color: var(--amber); }
@@ -477,7 +474,7 @@ html, body {
 .att-country { font-size: 12px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .att-bar-wrap { width: 50px; height: 3px; background: var(--bg3); border-radius: 2px; flex-shrink: 0; }
-.att-bar      { height: 3px; border-radius: 2px; background: var(--red);    transition: width 0.5s ease; }
+.att-bar      { height: 3px; border-radius: 2px; background: var(--red);    transition: width 0.6s ease; }
 .tgt-bar      { height: 3px; border-radius: 2px; background: var(--accent); transition: width 0.5s ease; }
 
 .att-count  { font-size: 11px; color: var(--red);    width: 28px; text-align: right; flex-shrink: 0; }
@@ -531,10 +528,11 @@ html, body {
 .bd-pct.green  { color: var(--green); }
 .bd-pct.orange { color: #ff8844; }
 
-/* ── Scrollbar global ──────────────────────────────────────────── */
-::-webkit-scrollbar { width: 4px; }
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
 
 /* ── Heatmap legend ────────────────────────────────────────────── */
 #heat-legend {
@@ -722,23 +720,10 @@ html, body { width: 100%; }
   min-height: 0;
 }
 
-/* ── Stat number count-up animation ───────────────────────────── */
-.stat-num {
-  transition: color 0.3s ease;
-}
-
 /* ── Feed item hover glow for threat type ─────────────────────── */
 .feed-item:hover { border-left-color: var(--accent); }
 .feed-item.t-malware-row:hover  { border-left-color: var(--red); }
 .feed-item.t-c2-row:hover       { border-left-color: var(--green); }
-
-/* ── Active attacker bar animation ───────────────────────────── */
-.att-bar { transition: width 0.6s ease; }
-
-/* ── Scrollbar — slightly more visible ───────────────────────── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
 
 /* ── Search bar ────────────────────────────────────────────────── */
 #search-wrap {
