@@ -264,23 +264,20 @@ window.AzimuthMap = (() => {
     stars = Array.from({ length: 80 }, () => ({
       x: Math.random(), y: Math.random(),
       r: Math.random() * 1.1 + 0.2,
-      baseA: Math.random() * 0.55 + 0.15,
-      twinkle: Math.random() * 0.04 + 0.008,
-      phase: Math.random() * Math.PI * 2,
     }));
   }
 
-  function drawStarfield() {
-    ctx.fillStyle   = '#ffffff';
-    ctx.globalAlpha = 0.35;
-    ctx.beginPath();
+  function drawStars(c) {
+    c.fillStyle   = '#ffffff';
+    c.globalAlpha = 0.35;
+    c.beginPath();
     stars.forEach(s => {
       const x = s.x * mapW, y = s.y * mapH;
-      ctx.moveTo(x + s.r, y);
-      ctx.arc(x, y, s.r, 0, Math.PI * 2);
+      c.moveTo(x + s.r, y);
+      c.arc(x, y, s.r, 0, Math.PI * 2);
     });
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    c.fill();
+    c.globalAlpha = 1;
   }
 
   /* ── Main draw loop ─────────────────────────────────────────── */
@@ -294,11 +291,12 @@ window.AzimuthMap = (() => {
           proj.rotate(globeRot);
         }
 
-        drawStarfield();
-        drawGlobeBg();   // updates bgCanvas only when rotation changes enough
+        // Globe background: space fill + stars + sphere + countries — drawn to bgCanvas
+        drawGlobeBg();
 
-        // Atmosphere glow — two arcs, no shadowBlur
         const sc = proj.scale();
+
+        // Atmosphere glow ring — drawn outside clip so it wraps the edge
         ctx.beginPath();
         ctx.arc(mapW / 2, mapH / 2, sc + 6, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(0, 180, 255, 0.07)';
@@ -310,7 +308,13 @@ window.AzimuthMap = (() => {
         ctx.lineWidth   = 1.5;
         ctx.stroke();
 
-        // City dots — two batched passes (fill, then stroke)
+        // Clip overlay to the globe circle — nothing bleeds outside the sphere
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(mapW / 2, mapH / 2, sc - 0.5, 0, Math.PI * 2);
+        ctx.clip();
+
+        // City dots
         const visPts = [];
         Object.values(GEO).forEach(([lon, lat]) => {
           const pt = proj([lon, lat]);
@@ -325,12 +329,19 @@ window.AzimuthMap = (() => {
         ctx.beginPath();
         visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
         ctx.stroke();
-      }
 
-      if (showHeat) drawHeat();
-      if (showArcs) drawArcs();
-      drawPulseRings();
-      drawParticles();
+        if (showHeat) drawHeat();
+        if (showArcs) drawArcs();
+        drawPulseRings();
+        drawParticles();
+
+        ctx.restore();
+      } else {
+        if (showHeat) drawHeat();
+        if (showArcs) drawArcs();
+        drawPulseRings();
+        drawParticles();
+      }
 
       lastFrame = ts;
     }
@@ -342,9 +353,15 @@ window.AzimuthMap = (() => {
     if (!worldData) return;
 
     const { countries, borders } = worldData;
-    bgCtx.clearRect(0, 0, mapW, mapH);
 
-    // Ocean sphere
+    // Opaque space background — no transparency anywhere on this canvas
+    bgCtx.fillStyle = '#020810';
+    bgCtx.fillRect(0, 0, mapW, mapH);
+
+    // Stars drawn before the sphere so the opaque globe covers them
+    drawStars(bgCtx);
+
+    // Ocean sphere — solid gradient paints over stars inside the circle
     bgCtx.beginPath();
     _bgCgp({ type: 'Sphere' });
     const sg = bgCtx.createRadialGradient(
