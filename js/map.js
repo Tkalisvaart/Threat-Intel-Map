@@ -479,12 +479,10 @@ window.AzimuthMap = (() => {
       if (!paused) arc.progress = Math.min(1, arc.progress + arc.speed);
 
       if (globeMode) {
-        if (!isGlobeVisible(arc.srcGeo) || !isGlobeVisible(arc.tgtGeo)) return;
         const sp = proj(arc.srcGeo);
         const tp = proj(arc.tgtGeo);
-        if (!sp || !tp) return;
-        arc.x1 = sp[0]; arc.y1 = sp[1];
-        arc.x2 = tp[0]; arc.y2 = tp[1];
+        if (sp) { arc.x1 = sp[0]; arc.y1 = sp[1]; }
+        if (tp) { arc.x2 = tp[0]; arc.y2 = tp[1]; }
       }
 
       const age  = now - arc.born;
@@ -496,27 +494,30 @@ window.AzimuthMap = (() => {
 
   function drawTacticalArc(arc, fade) {
     const { x1, y1, x2, y2, color, progress } = arc;
-    const dist = Math.hypot(x2 - x1, y2 - y1);
-    if (dist < 3) return;
 
-    const STEPS = globeMode ? 60 : 40;
-    const N     = Math.max(2, Math.round(progress * STEPS));
-    const pts   = [];
+    let segments;
 
     if (globeMode && arc.srcGeo && arc.tgtGeo) {
-      const interp  = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
+      const interp   = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
       const cx = mapW / 2, cy = mapH / 2;
-      const MAX_LIFT = 0.30;
+      const MAX_LIFT = 0.20;
+      const N        = Math.max(2, Math.round(progress * 60));
+      const seg = [];
       for (let i = 0; i <= N; i++) {
         const t  = progress * i / N;
         const pt = proj(interp(t));
-        if (!pt) break;
+        if (!pt) continue;
         const lift = MAX_LIFT * Math.sin(Math.PI * t);
-        pts.push([cx + (pt[0] - cx) * (1 + lift), cy + (pt[1] - cy) * (1 + lift)]);
+        seg.push([cx + (pt[0] - cx) * (1 + lift), cy + (pt[1] - cy) * (1 + lift)]);
       }
+      segments = seg.length >= 2 ? [seg] : [];
     } else {
+      const dist = Math.hypot(x2 - x1, y2 - y1);
+      if (dist < 3) return;
       const cx = (x1 + x2) / 2;
       const cy = Math.min(y1, y2) - dist * 0.22 - 12;
+      const N  = Math.max(2, Math.round(progress * 40));
+      const pts = [];
       for (let i = 0; i <= N; i++) {
         const t = progress * i / N;
         pts.push([
@@ -524,38 +525,46 @@ window.AzimuthMap = (() => {
           (1-t)*(1-t)*y1 + 2*(1-t)*t*cy + t*t*y2,
         ]);
       }
+      segments = pts.length >= 2 ? [pts] : [];
     }
-    if (pts.length < 2) return;
 
-    const [ex, ey] = pts[pts.length - 1];
+    if (!segments.length) return;
+    const allPts = segments.flat();
+    if (allPts.length < 2) return;
+
+    const [sx, sy] = allPts[0];
+    const [ex, ey] = allPts[allPts.length - 1];
+
     ctx.save();
     ctx.globalAlpha = fade;
     ctx.lineCap = 'round';
 
-    // Thin halo — single subtle layer (no thick bloom)
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.strokeStyle = color + '22';
-    ctx.lineWidth   = 2;
-    ctx.stroke();
+    function strokeSegs(style, width) {
+      ctx.strokeStyle = style;
+      ctx.lineWidth   = width;
+      segments.forEach(seg => {
+        if (seg.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(seg[0][0], seg[0][1]);
+        for (let i = 1; i < seg.length; i++) ctx.lineTo(seg[i][0], seg[i][1]);
+        ctx.stroke();
+      });
+    }
 
-    // Core hairline — gradient trail, transparent at origin, full-bright at head
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    const lg = ctx.createLinearGradient(pts[0][0], pts[0][1], ex, ey);
+    // Thin halo
+    strokeSegs(color + '22', 2);
+
+    // Core hairline — gradient transparent at origin, bright at head
+    const lg = ctx.createLinearGradient(sx, sy, ex, ey);
     lg.addColorStop(0,    color + '00');
     lg.addColorStop(0.25, color + '20');
     lg.addColorStop(0.7,  color + '99');
     lg.addColorStop(1,    color + 'ff');
-    ctx.strokeStyle = lg;
-    ctx.lineWidth   = 0.75;
-    ctx.stroke();
+    strokeSegs(lg, 0.75);
 
-    // Head — small crisp dot, minimal halo
+    // Head dot
     if (progress < 1) {
-      ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(ex, ey, 3,   0, Math.PI * 2);
       ctx.fillStyle = color + '38'; ctx.fill();
       ctx.beginPath(); ctx.arc(ex, ey, 1.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff'; ctx.fill();
@@ -563,7 +572,7 @@ window.AzimuthMap = (() => {
 
     if (progress >= 0.97 && !arc.impacted) {
       arc.impacted = true;
-      addPulseRing(x2, y2, arc.color);
+      addPulseRing(arc.x2, arc.y2, arc.color);
     }
 
     ctx.restore();
