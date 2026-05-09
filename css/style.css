@@ -793,6 +793,38 @@ html, body { width: 100%; }
 .fam-name {
   font-size: 10px;
 }
+.fi-active {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--red);
+  background: var(--red-dim);
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.fi-port {
+  font-size: 10px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.fi-asn {
+  font-size: 9px;
+  color: var(--text3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+  flex-shrink: 1;
+  font-style: italic;
+}
+.d-event-actor {
+  font-size: 9px;
+  color: var(--amber);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .fi-src[data-country], .fi-tgt[data-country] { cursor: pointer; }
 .fi-src[data-country]:hover { color: var(--accent); }
 .fi-tgt[data-country]:hover { color: var(--accent); }

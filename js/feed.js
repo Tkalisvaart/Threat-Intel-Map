@@ -45,12 +45,13 @@ window.AzimuthFeed = (() => {
       if (minuteHistory.length > 30) minuteHistory.shift();
     }
 
-    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), family: attack.family || '', first_seen: attack.first_seen || '', confidence: attack.confidence || 0 });
+    feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), family: attack.family || '', first_seen: attack.first_seen || '', confidence: attack.confidence || 0, active: attack.active || false, port: attack.port || 0, asn: attack.asn || '', city: attack.city || '', lat: attack.lat || 0, lon: attack.lon || 0 });
     if (feedItems.length > MAX_FEED) feedItems.pop();
 
     renderFeed();
     renderStats();
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
+    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
     renderTopFamilies();
     renderBreakdown();
   }
@@ -83,20 +84,34 @@ window.AzimuthFeed = (() => {
       const confBadge = item.confidence >= 90
         ? `<span class="fi-conf">CONF ${item.confidence}%</span>`
         : '';
+      const activeBadge = item.active
+        ? `<span class="fi-active">LIVE</span>`
+        : '';
+      const portBadge = item.port
+        ? `<span class="fi-port">:${item.port}</span>`
+        : '';
+      const asnShort = item.asn
+        ? item.asn.split(' ').slice(0, 2).join(' ')
+        : '';
+      const asnBadge = asnShort
+        ? `<span class="fi-asn" title="${item.asn}">${asnShort}</span>`
+        : '';
 
       const div = document.createElement('div');
       div.className = 'feed-item' + (i === 0 ? ' new-item' : '');
       div.innerHTML = `
       <div class="fi-top">
         <span class="fi-type ${t.cls}">${t.label}</span>
+        ${activeBadge}
         <span class="fi-src" data-country="${item.src}" role="button">${item.src}</span>
         <span class="fi-arr">→</span>
         <span class="fi-tgt" data-country="${item.tgt}" role="button">${item.tgt}</span>
         ${age ? `<span class="fi-time">${age}</span>` : ''}
       </div>
       <div class="fi-bot">
-        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>
+        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}
         ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
+        ${asnBadge}
         ${confBadge}
       </div>`;
       list.appendChild(div);
@@ -130,7 +145,7 @@ window.AzimuthFeed = (() => {
   }
 
   function renderTopFamilies() {
-    const el = document.getElementById('targets');
+    const el = document.getElementById('top-families');
     if (!el) return;
     const sorted = Object.entries(familyMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const max = sorted[0] ? sorted[0][1] : 1;
@@ -228,6 +243,7 @@ window.AzimuthFeed = (() => {
       if (e.family) familyMap[e.family] = (familyMap[e.family] || 0) + 1;
     });
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
+    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
     renderTopFamilies();
     if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
   }

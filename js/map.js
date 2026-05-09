@@ -232,7 +232,7 @@ window.AzimuthMap = (() => {
 
   /* ── Arc management ─────────────────────────────────────────── */
   function addArc(attack) {
-    const srcGeo = GEO[attack.src];
+    const srcGeo = (attack.lat && attack.lon) ? [attack.lon, attack.lat] : GEO[attack.src];
     const tgtGeo = GEO[attack.tgt];
     if (!srcGeo || !tgtGeo) return;
 

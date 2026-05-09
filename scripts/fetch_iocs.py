@@ -117,7 +117,7 @@ def map_threat_type(raw):
 
 
 def geolocate_ips(ips):
-    """Batch-geolocate IPs via ip-api.com (free, no key, 100 IPs/request)."""
+    """Batch-geolocate IPs via ip-api.com. Returns {ip: {country, lat, lon, city, asn}}."""
     if not ips:
         return {}
     results = {}
@@ -136,9 +136,15 @@ def geolocate_ips(ips):
             if entry.get('status') == 'success':
                 country = ISO_TO_COUNTRY.get(entry.get('countryCode', ''))
                 if country:
-                    results[entry['query']] = country
+                    results[entry['query']] = {
+                        'country': country,
+                        'lat': round(entry.get('lat', 0), 4),
+                        'lon': round(entry.get('lon', 0), 4),
+                        'city': entry.get('city', ''),
+                        'asn': entry.get('as', ''),
+                    }
         if idx + 1 < len(chunks):
-            time.sleep(2)  # ip-api free tier: ~45 req/min
+            time.sleep(2)
     return results
 
 
@@ -163,19 +169,35 @@ def fetch_feodo():
         try:
             extra = geolocate_ips([e['ip_address'] for e in unmapped])
             for e in unmapped:
-                src = extra.get(e['ip_address'])
+                g = extra.get(e['ip_address'], {})
+                src = g.get('country')
                 if src:
                     mapped.append((e, src))
         except Exception:
             pass
 
+    # Enrich all mapped IPs with exact coordinates + ASN
+    all_ips = [e.get('ip_address', '') for e, _ in mapped if e.get('ip_address')]
+    geo_detail = {}
+    try:
+        geo_detail = geolocate_ips(all_ips)
+    except Exception:
+        pass
+
     events = []
     for e, src in mapped:
-        mtype      = map_malware_type(e.get('malware', ''))
         ip         = e.get('ip_address', '')
+        mtype      = map_malware_type(e.get('malware', ''))
         family     = e.get('malware', '')
         first_seen = (e.get('first_seen') or '')[:10]
-        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family, 'first_seen': first_seen})
+        port       = e.get('port', 0) or 0
+        g          = geo_detail.get(ip, {})
+        events.append({
+            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
+            'ip': ip, 'family': family, 'first_seen': first_seen, 'port': port,
+            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+            'city': g.get('city', ''), 'asn': g.get('asn', ''),
+        })
     return events
 
 
@@ -236,7 +258,7 @@ def fetch_openphish():
         return []
 
     geo = geolocate_ips(unique_ips)
-    ip_to_country = {ip: geo.get(ip) for ip in unique_ips if geo.get(ip)}
+    ip_to_country = {ip: geo[ip]['country'] for ip in unique_ips if ip in geo}
 
     events = []
     seen_ips = set()
@@ -244,7 +266,13 @@ def fetch_openphish():
         src = ip_to_country.get(ip)
         if src and ip not in seen_ips:
             seen_ips.add(ip)
-            events.append({'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing', 'ip': ip, 'family': 'Phishing Site', 'first_seen': ''})
+            g = geo.get(ip, {})
+            events.append({
+                'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing',
+                'ip': ip, 'family': 'Phishing Site', 'first_seen': '',
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
     return events
 
 
@@ -282,9 +310,15 @@ def fetch_blocklist_de():
 
     events = []
     for ip, mtype, family_label in ip_entries:
-        src = geo.get(ip)
+        g = geo.get(ip, {})
+        src = g.get('country')
         if src:
-            events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': family_label, 'first_seen': ''})
+            events.append({
+                'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
+                'ip': ip, 'family': family_label, 'first_seen': '',
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
     return events
 
 
@@ -307,9 +341,15 @@ def fetch_emerging_threats():
 
     events = []
     for ip in sample:
-        src = geo.get(ip)
+        g = geo.get(ip, {})
+        src = g.get('country')
         if src:
-            events.append({'src': src, 'tgt': pick_target('malware', src), 'type': 'malware', 'ip': ip, 'family': 'Compromised Host', 'first_seen': ''})
+            events.append({
+                'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
+                'ip': ip, 'family': 'Compromised Host', 'first_seen': '',
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
     return events
 
 
@@ -351,6 +391,15 @@ def fetch_abuseipdb(api_key):
 
     sample = random.sample(entries, min(150, len(entries)))
 
+    # Collect IPs for enrichment
+    ip_list = [entry.get('ipAddress', '') for entry in sample if entry.get('ipAddress')]
+    print(f'  AbuseIPDB: enriching {len(ip_list)} IPs with coordinates...')
+    geo_detail = {}
+    try:
+        geo_detail = geolocate_ips(ip_list)
+    except Exception:
+        pass
+
     events = []
     for entry in sample:
         cc      = (entry.get('countryCode') or '').upper()
@@ -361,7 +410,165 @@ def fetch_abuseipdb(api_key):
         mtype      = pick_type(entry.get('categories', []))
         first_seen = (entry.get('lastReportedAt') or '')[:10]
         confidence = entry.get('abuseConfidenceScore', 0)
-        events.append({'src': src, 'tgt': pick_target(mtype, src), 'type': mtype, 'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen, 'confidence': confidence})
+        g          = geo_detail.get(ip, {})
+        events.append({
+            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
+            'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen,
+            'confidence': confidence,
+            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+            'city': g.get('city', ''), 'asn': g.get('asn', ''),
+        })
+    return events
+
+
+def fetch_threatfox():
+    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch) — no API key required."""
+    payload = json.dumps({'query': 'get_iocs', 'days': 1}).encode()
+    req = urllib.request.Request(
+        'https://threatfox-api.abuse.ch/api/v1/',
+        data=payload,
+        headers={'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read())
+
+    if data.get('query_status') != 'ok':
+        return []
+
+    iocs = data.get('data', []) or []
+    seen = set()
+    ip_entries = []
+
+    for ioc in iocs:
+        if ioc.get('ioc_type') != 'ip:port':
+            continue
+        ioc_value = ioc.get('ioc_value', '')
+        try:
+            # Handle both IPv4 (1.2.3.4:80) and IPv6 ([::1]:80)
+            if ioc_value.startswith('['):
+                ip = ioc_value[1:ioc_value.index(']')]
+            else:
+                ip = ioc_value.rsplit(':', 1)[0]
+        except Exception:
+            continue
+        if not ip or ip in seen:
+            continue
+        seen.add(ip)
+
+        family     = ioc.get('malware_printable', '') or ''
+        confidence = ioc.get('confidence_level', 50)
+        threat_type= ioc.get('threat_type', '')
+        first_seen = (ioc.get('first_seen') or '')[:10]
+        tags       = [t.get('tag_name', '') for t in (ioc.get('tags') or []) if isinstance(t, dict)]
+        mtype      = map_malware_type(family) if family else map_threat_type(threat_type)
+        port       = 0
+        try:
+            port = int(ioc_value.rsplit(':', 1)[1])
+        except Exception:
+            pass
+
+        ip_entries.append({
+            'ip': ip, 'family': family or 'ThreatFox IOC', 'mtype': mtype,
+            'confidence': confidence, 'first_seen': first_seen, 'port': port,
+        })
+
+    if not ip_entries:
+        return []
+
+    print(f'  ThreatFox: geolocating {len(ip_entries)} IPs...')
+    geo = geolocate_ips([e['ip'] for e in ip_entries])
+
+    events = []
+    for entry in ip_entries:
+        g = geo.get(entry['ip'], {})
+        src = g.get('country')
+        if not src:
+            continue
+        events.append({
+            'src': src, 'tgt': pick_target(entry['mtype'], src),
+            'type': entry['mtype'], 'ip': entry['ip'],
+            'family': entry['family'], 'first_seen': entry['first_seen'],
+            'confidence': entry['confidence'], 'port': entry['port'],
+            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+            'city': g.get('city', ''), 'asn': g.get('asn', ''),
+        })
+    return events
+
+
+def fetch_urlhaus():
+    """Fetch recent malware URLs from URLhaus (abuse.ch) — no API key required."""
+    req = urllib.request.Request(
+        'https://urlhaus-api.abuse.ch/v1/urls/recent/',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read())
+
+    urls = data.get('urls', [])
+    if not urls:
+        return []
+
+    seen_hosts = set()
+    host_entries = []
+    for url_entry in urls:
+        url    = url_entry.get('url', '')
+        status = url_entry.get('url_status', '')
+        tags   = url_entry.get('tags') or []
+        threat = url_entry.get('threat', '')
+        try:
+            host = url.split('://', 1)[-1].split('/')[0].split('@')[-1]
+            if ':' in host and not host.startswith('['):
+                host = host.rsplit(':', 1)[0]
+        except Exception:
+            continue
+        if not host or host in seen_hosts:
+            continue
+        seen_hosts.add(host)
+        family = tags[0] if tags else (threat or 'URLhaus')
+        host_entries.append({'host': host, 'status': status, 'family': family})
+
+    # Prioritise online (active) threats
+    online  = [e for e in host_entries if e['status'] == 'online']
+    offline = [e for e in host_entries if e['status'] != 'online']
+    sample  = (random.sample(online, min(60, len(online))) +
+               random.sample(offline, min(40, len(offline))))
+
+    print(f'  URLhaus: resolving {len(sample)} hosts ({len(online)} active)...')
+    host_to_ip = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+        futures = {pool.submit(_resolve, e['host']): e for e in sample}
+        done, _ = concurrent.futures.wait(futures, timeout=25)
+        for fut in done:
+            entry = futures[fut]
+            ip = fut.result()
+            if ip:
+                host_to_ip[entry['host']] = (ip, entry)
+
+    if not host_to_ip:
+        return []
+
+    unique_ips = list({ip for ip, _ in host_to_ip.values()})
+    geo = geolocate_ips(unique_ips)
+
+    events = []
+    seen_ips: set = set()
+    for host, (ip, entry) in host_to_ip.items():
+        if ip in seen_ips:
+            continue
+        seen_ips.add(ip)
+        g = geo.get(ip, {})
+        src = g.get('country')
+        if not src:
+            continue
+        mtype = map_malware_type(entry['family'])
+        events.append({
+            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
+            'ip': ip, 'family': entry['family'], 'first_seen': '',
+            'active': entry['status'] == 'online',
+            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+            'city': g.get('city', ''), 'asn': g.get('asn', ''),
+        })
     return events
 
 
@@ -411,6 +618,22 @@ def main():
             print(f'  AbuseIPDB failed: {e}')
     else:
         print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
+
+    print('Fetching ThreatFox...')
+    try:
+        tf = fetch_threatfox()
+        events.extend(tf)
+        print(f'  {len(tf)} indicators')
+    except Exception as e:
+        print(f'  ThreatFox failed: {e}')
+
+    print('Fetching URLhaus...')
+    try:
+        uh = fetch_urlhaus()
+        events.extend(uh)
+        print(f'  {len(uh)} indicators')
+    except Exception as e:
+        print(f'  URLhaus failed: {e}')
 
     # Deduplicate by IP — keep first (richest) entry per IP across all feeds
     seen_ips: set = set()

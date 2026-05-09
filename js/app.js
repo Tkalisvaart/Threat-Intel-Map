@@ -180,21 +180,26 @@
       const events = window.AzimuthFeed.getAllEvents()
         .filter(e => e.src === country || e.tgt === country)
         .slice(0, 10);
+      const { THREAT_ACTORS } = window.AZIMUTH_DATA;
       document.getElementById('d-events').innerHTML = events.length
         ? events.map(e => {
-            const t   = TYPES[e.type];
-            const dir = e.src === country ? '→' : '←';
-            const peer = e.src === country ? e.tgt : e.src;
-            const vtUrl = `https://www.virustotal.com/gui/ip-address/${e.ip}`;
+            const t      = TYPES[e.type];
+            const dir    = e.src === country ? '→' : '←';
+            const peer   = e.src === country ? e.tgt : e.src;
+            const vtUrl  = `https://www.virustotal.com/gui/ip-address/${e.ip}`;
+            const actor  = e.family ? (THREAT_ACTORS[e.family] || '') : '';
+            const portTxt = e.port ? `<span class="fi-port">:${e.port}</span>` : '';
+            const actorTxt = actor ? `<span class="d-event-actor">${actor}</span>` : '';
             return `<div class="d-event">
               <span class="fi-type ${t.cls}">${t.label}</span>
               <span class="d-event-dir">${dir}</span>
               <span class="d-event-peer">${peer}</span>
-              <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer">${e.ip}</a>
+              <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer">${e.ip}</a>${portTxt}
+              ${actorTxt}
               ${e.first_seen ? `<span class="d-event-first">${e.first_seen}</span>` : ''}
             </div>`;
           }).join('')
-        : '<div class="d-empty">No events yet</div>';
+        : '<div class="d-empty">No indicators yet</div>';
 
       drawer.classList.add('open');
     }
@@ -233,6 +238,8 @@
       { key: 'blocklist',       label: 'Blocklist.de'     },
       { key: 'emergingthreats', label: 'Emerging Threats' },
       { key: 'abuseipdb',       label: 'AbuseIPDB'        },
+      { key: 'threatfox',       label: 'ThreatFox'        },
+      { key: 'urlhaus',         label: 'URLhaus'          },
     ];
 
     if (!s) {
@@ -515,17 +522,16 @@
       emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
       abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
     };
-    const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length;
-    set('r-feeds', `${activeFeeds}/5`);
+    const urlhausCount = valid.filter(e => e.active !== undefined).length;
+    const threatfoxCount = valid.filter(e => (e.port || 0) > 0 && (e.confidence || 0) > 0 && (e.family || '') !== 'AbuseIPDB').length;
+    const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length
+      + (threatfoxCount > 0 ? 1 : 0)
+      + (urlhausCount > 0 ? 1 : 0);
+    set('r-feeds', `${activeFeeds}/7`);
 
-    // Fresh IOCs: first_seen within last 7 days
-    const now = Date.now();
-    const freshCount = valid.filter(e => {
-      if (!e.first_seen) return false;
-      const d = new Date(e.first_seen);
-      return !isNaN(d) && (now - d) <= 7 * 86400000;
-    }).length;
-    set('r-fresh', freshCount.toLocaleString());
+    // Active threats (URLhaus online status)
+    const activeCount = valid.filter(e => e.active === true).length;
+    set('r-active', activeCount.toLocaleString());
 
     // Global threat level — based on C2/exploit ratio (highest-risk types)
     const sevEl = document.getElementById('ts-severity');
@@ -553,6 +559,8 @@
 
     window.AZIMUTH_SOURCES = {
       ...feedCounts,
+      threatfox: valid.filter(e => (e.port || 0) > 0 && (e.confidence || 0) > 0 && (e.family || '') !== 'AbuseIPDB').length,
+      urlhaus:   valid.filter(e => e.active !== undefined).length,
       updatedAt: _dataLastModified,
     };
   }

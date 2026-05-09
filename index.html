@@ -99,6 +99,18 @@
             <span class="ip-tag">Multi</span>
             <span class="ip-count inactive" id="ipc-abuseipdb">—</span>
           </div>
+          <div class="ip-row" id="ipr-threatfox">
+            <span class="ip-dot"></span>
+            <span class="ip-name">ThreatFox</span>
+            <span class="ip-tag">C2/IOC</span>
+            <span class="ip-count inactive" id="ipc-threatfox">—</span>
+          </div>
+          <div class="ip-row" id="ipr-urlhaus">
+            <span class="ip-dot"></span>
+            <span class="ip-name">URLhaus</span>
+            <span class="ip-tag">Malware</span>
+            <span class="ip-count inactive" id="ipc-urlhaus">—</span>
+          </div>
           <div class="ip-updated" id="ipc-updated"></div>
         </div>
       </div>
@@ -229,8 +241,8 @@
           <div class="stat-lbl">Active Feeds</div>
         </div>
         <div class="stat-cell alt">
-          <div class="stat-num" id="r-fresh">0</div>
-          <div class="stat-lbl">Fresh IOCs</div>
+          <div class="stat-num red" id="r-active">0</div>
+          <div class="stat-lbl">Active</div>
         </div>
       </div>
 
@@ -241,10 +253,16 @@
       <div id="attackers"></div>
 
       <div class="panel-header panel-header-split">
+        <span class="panel-title">Reported Targets</span>
+        <span class="panel-title-sub">estimated</span>
+      </div>
+      <div id="targets"></div>
+
+      <div class="panel-header panel-header-split">
         <span class="panel-title">Top Families</span>
         <span class="panel-title-sub">by indicator count</span>
       </div>
-      <div id="targets"></div>
+      <div id="top-families"></div>
 
       <div id="timeline-wrap">
         <div class="timeline-label">Activity — 30 min</div>
