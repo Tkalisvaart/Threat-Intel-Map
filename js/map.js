@@ -372,15 +372,11 @@ window.AzimuthMap = (() => {
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
-  function drawHeatBlob(c, country, count, r, g, b) {
-    if (!GEO[country]) return;
-    const pt = proj(GEO[country]);
-    if (!pt) return;
-    const [x, y] = pt;
-    const radius = Math.min(52, 10 + count * 2.4);
+  function drawHeatPoint(c, x, y, count, r, g, b) {
+    const radius = Math.min(26, 4 + count * 1.5);
     const grad   = c.createRadialGradient(x, y, 0, x, y, radius);
-    grad.addColorStop(0,   `rgba(${r},${g},${b},0.34)`);
-    grad.addColorStop(0.4, `rgba(${r},${g},${b},0.12)`);
+    grad.addColorStop(0,   `rgba(${r},${g},${b},0.15)`);
+    grad.addColorStop(0.5, `rgba(${r},${g},${b},0.04)`);
     grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
     c.beginPath();
     c.arc(x, y, radius, 0, Math.PI * 2);
@@ -388,18 +384,40 @@ window.AzimuthMap = (() => {
     c.fill();
   }
 
-  function drawHeat() {
-    const am = window.AzimuthFeed.getAttackerMap();
-    const tm = window.AzimuthFeed.getTargetMap();
+  function _drawHeatToCtx(c) {
+    // Attacker heat — bucket events by exact lat/lon (0.5° resolution)
+    const events = window.AzimuthFeed.getAllEvents();
+    const srcBuckets = {};
+    events.forEach(e => {
+      const lon = (e.lon && e.lat) ? e.lon : (GEO[e.src] || [])[0];
+      const lat = (e.lon && e.lat) ? e.lat : (GEO[e.src] || [])[1];
+      if (!lon && !lat) return;
+      const key = `${(lon / 0.5 | 0)},${(lat / 0.5 | 0)}`;
+      if (!srcBuckets[key]) srcBuckets[key] = { lon, lat, count: 0 };
+      srcBuckets[key].count++;
+    });
+    Object.values(srcBuckets).forEach(({ lon, lat, count }) => {
+      const pt = proj([lon, lat]);
+      if (!pt) return;
+      drawHeatPoint(c, pt[0], pt[1], count, 255, 51, 85);
+    });
 
+    // Target heat — country centroids only (estimated, no exact coords)
+    Object.entries(window.AzimuthFeed.getTargetMap()).forEach(([country, count]) => {
+      const geo = GEO[country];
+      if (!geo) return;
+      const pt = proj(geo);
+      if (!pt) return;
+      drawHeatPoint(c, pt[0], pt[1], count, 0, 180, 255);
+    });
+  }
+
+  function drawHeat() {
     if (globeMode) {
-      // Globe rotates every frame — pixel positions always stale, draw directly to overlay
-      Object.entries(am).forEach(([c, n]) => drawHeatBlob(ctx, c, n, 255, 51, 85));
-      Object.entries(tm).forEach(([c, n]) => drawHeatBlob(ctx, c, n, 0, 180, 255));
+      _drawHeatToCtx(ctx);
       return;
     }
 
-    // Flat map — offscreen cache, blit when stale
     const now   = performance.now();
     const stale = now - _lastHeatTs > 800;
 
@@ -415,10 +433,7 @@ window.AzimuthMap = (() => {
       _heatOffCtx     = _heatOff.getContext('2d');
     }
     _heatOffCtx.clearRect(0, 0, mapW, mapH);
-
-    Object.entries(am).forEach(([c, n]) => drawHeatBlob(_heatOffCtx, c, n, 255, 51, 85));
-    Object.entries(tm).forEach(([c, n]) => drawHeatBlob(_heatOffCtx, c, n, 0, 180, 255));
-
+    _drawHeatToCtx(_heatOffCtx);
     ctx.drawImage(_heatOff, 0, 0);
     _lastHeatTs = now;
   }
@@ -456,8 +471,6 @@ window.AzimuthMap = (() => {
     const pts   = [];
 
     if (globeMode && arc.srcGeo && arc.tgtGeo) {
-      // Great-circle path lifted above globe surface — sine-curve lift so
-      // arc rises into space and returns to surface at the target.
       const interp  = d3.geoInterpolate(arc.srcGeo, arc.tgtGeo);
       const cx = mapW / 2, cy = mapH / 2;
       const MAX_LIFT = 0.18;
@@ -470,7 +483,7 @@ window.AzimuthMap = (() => {
       }
     } else {
       const cx = (x1 + x2) / 2;
-      const cy = Math.min(y1, y2) - dist * 0.24 - 16;
+      const cy = Math.min(y1, y2) - dist * 0.22 - 12;
       for (let i = 0; i <= N; i++) {
         const t = progress * i / N;
         pts.push([
@@ -484,42 +497,35 @@ window.AzimuthMap = (() => {
     const [ex, ey] = pts[pts.length - 1];
     ctx.save();
     ctx.globalAlpha = fade;
+    ctx.lineCap = 'round';
 
-    function strokePts(style, width) {
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-      ctx.strokeStyle = style;
-      ctx.lineWidth   = width;
-      ctx.stroke();
-    }
+    // Thin halo — single subtle layer (no thick bloom)
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.strokeStyle = color + '22';
+    ctx.lineWidth   = 2;
+    ctx.stroke();
 
-    strokePts(color + '18', globeMode ? 6 : 8);    // bloom
-    strokePts(color + '3a', globeMode ? 2.5 : 3);  // glow
-
-    // Core line — gradient trail (transparent at origin, bright at head)
+    // Core hairline — gradient trail, transparent at origin, full-bright at head
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     const lg = ctx.createLinearGradient(pts[0][0], pts[0][1], ex, ey);
-    lg.addColorStop(0,   color + '14');
-    lg.addColorStop(0.4, color + '55');
-    lg.addColorStop(0.8, color + 'bb');
-    lg.addColorStop(1,   color + 'ff');
+    lg.addColorStop(0,    color + '00');
+    lg.addColorStop(0.25, color + '20');
+    lg.addColorStop(0.7,  color + '99');
+    lg.addColorStop(1,    color + 'ff');
     ctx.strokeStyle = lg;
-    ctx.lineWidth = globeMode ? 1.8 : 1.5;
+    ctx.lineWidth   = 0.75;
     ctx.stroke();
 
-    // Moving head — concentric alpha circles, no shadowBlur
+    // Head — small crisp dot, minimal halo
     if (progress < 1) {
-      ctx.beginPath(); ctx.arc(ex, ey, 8,   0, Math.PI * 2);
-      ctx.fillStyle = color + '1f'; ctx.fill();
-      ctx.beginPath(); ctx.arc(ex, ey, 5,   0, Math.PI * 2);
-      ctx.fillStyle = color + '40'; ctx.fill();
-      ctx.beginPath(); ctx.arc(ex, ey, 3.5, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+      ctx.fillStyle = color + '38'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, 1.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff'; ctx.fill();
-      ctx.beginPath(); ctx.arc(ex, ey, 2,   0, Math.PI * 2);
-      ctx.fillStyle = color; ctx.fill();
     }
 
     if (progress >= 0.97 && !arc.impacted) {
@@ -554,13 +560,13 @@ window.AzimuthMap = (() => {
     pulseRings = pulseRings.filter(r => (now - r.born) < r.ttl);
     pulseRings.forEach(r => {
       const life   = 1 - (now - r.born) / r.ttl;
-      const radius = 2 + (1 - life) * 15;
+      const radius = 1 + (1 - life) * 9;
       ctx.save();
-      ctx.globalAlpha = life * 0.9;
+      ctx.globalAlpha = life * 0.55;
       ctx.beginPath();
       ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
       ctx.strokeStyle = r.color;
-      ctx.lineWidth   = 1.2;
+      ctx.lineWidth   = 0.7;
       ctx.stroke();
       ctx.restore();
     });
