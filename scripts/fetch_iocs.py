@@ -161,6 +161,29 @@ KNOWN_COUNTRIES = {
     'UAE', 'Morocco', 'Algeria', 'Bangladesh', 'Sri Lanka', 'Myanmar',
     'Nepal', 'Slovakia', 'Croatia', 'Azerbaijan', 'Georgia', 'Armenia',
     'Uzbekistan',
+    # Africa
+    'Kenya', 'Tanzania', 'Ethiopia', 'Ghana', 'Ivory Coast', 'Cameroon',
+    'Angola', 'Mozambique', 'Zimbabwe', 'Zambia', 'Uganda', 'Rwanda',
+    'Sudan', 'DR Congo', 'Senegal', 'Libya', 'Tunisia', 'Somalia',
+    'Namibia', 'Botswana', 'Madagascar', 'Mali', 'Malawi', 'Burkina Faso',
+    'Niger', 'Togo', 'Benin', 'Guinea', 'Mauritius',
+    # Middle East
+    'Iraq', 'Syria', 'Jordan', 'Kuwait', 'Qatar', 'Bahrain',
+    'Oman', 'Lebanon', 'Yemen', 'Palestine',
+    # Central & South Asia
+    'Afghanistan', 'Kyrgyzstan', 'Tajikistan', 'Turkmenistan',
+    # East & Southeast Asia
+    'Cambodia', 'Laos', 'Mongolia',
+    # Europe
+    'Albania', 'Bosnia', 'North Macedonia', 'Montenegro', 'Iceland',
+    'Luxembourg', 'Malta', 'Cyprus', 'Ireland', 'Slovenia',
+    # Americas
+    'Bolivia', 'Ecuador', 'Paraguay', 'Uruguay', 'Cuba',
+    'Dominican Republic', 'Honduras', 'Guatemala', 'El Salvador',
+    'Costa Rica', 'Panama', 'Nicaragua', 'Guyana',
+    'Trinidad and Tobago', 'Jamaica', 'Haiti',
+    # Oceania
+    'New Zealand', 'Papua New Guinea', 'Fiji',
 }
 
 ISO_TO_COUNTRY = {
@@ -189,6 +212,41 @@ ISO_TO_COUNTRY = {
     'NP': 'Nepal',          'SK': 'Slovakia',      'HR': 'Croatia',
     'AZ': 'Azerbaijan',     'GE': 'Georgia',       'AM': 'Armenia',
     'UZ': 'Uzbekistan',
+    # Africa
+    'KE': 'Kenya',          'TZ': 'Tanzania',      'ET': 'Ethiopia',
+    'GH': 'Ghana',          'CI': 'Ivory Coast',   'CM': 'Cameroon',
+    'AO': 'Angola',         'MZ': 'Mozambique',    'ZW': 'Zimbabwe',
+    'ZM': 'Zambia',         'UG': 'Uganda',        'RW': 'Rwanda',
+    'SD': 'Sudan',          'CD': 'DR Congo',      'SN': 'Senegal',
+    'LY': 'Libya',          'TN': 'Tunisia',       'SO': 'Somalia',
+    'NA': 'Namibia',        'BW': 'Botswana',      'MG': 'Madagascar',
+    'ML': 'Mali',           'MW': 'Malawi',        'BF': 'Burkina Faso',
+    'NE': 'Niger',          'TG': 'Togo',          'BJ': 'Benin',
+    'GN': 'Guinea',         'MU': 'Mauritius',
+    # Middle East
+    'IQ': 'Iraq',           'SY': 'Syria',         'JO': 'Jordan',
+    'KW': 'Kuwait',         'QA': 'Qatar',         'BH': 'Bahrain',
+    'OM': 'Oman',           'LB': 'Lebanon',       'YE': 'Yemen',
+    'PS': 'Palestine',
+    # Central & South Asia
+    'AF': 'Afghanistan',    'KG': 'Kyrgyzstan',    'TJ': 'Tajikistan',
+    'TM': 'Turkmenistan',
+    # East & Southeast Asia
+    'KH': 'Cambodia',       'LA': 'Laos',          'MN': 'Mongolia',
+    # Europe
+    'AL': 'Albania',        'BA': 'Bosnia',        'MK': 'North Macedonia',
+    'ME': 'Montenegro',     'IS': 'Iceland',       'LU': 'Luxembourg',
+    'MT': 'Malta',          'CY': 'Cyprus',        'IE': 'Ireland',
+    'SI': 'Slovenia',
+    # Americas
+    'BO': 'Bolivia',        'EC': 'Ecuador',       'PY': 'Paraguay',
+    'UY': 'Uruguay',        'CU': 'Cuba',          'DO': 'Dominican Republic',
+    'HN': 'Honduras',       'GT': 'Guatemala',     'SV': 'El Salvador',
+    'CR': 'Costa Rica',     'PA': 'Panama',        'NI': 'Nicaragua',
+    'GY': 'Guyana',         'TT': 'Trinidad and Tobago', 'JM': 'Jamaica',
+    'HT': 'Haiti',
+    # Oceania
+    'NZ': 'New Zealand',    'PG': 'Papua New Guinea', 'FJ': 'Fiji',
 }
 
 TARGETS = {
