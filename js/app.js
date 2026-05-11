@@ -523,6 +523,26 @@
     try { localStorage.setItem(key, JSON.stringify(history)); } catch {}
   }
 
+  /* ── Continuous animation loop ─────────────────────────────── */
+  let _animQueue  = [];
+  let _animTimer  = null;
+  const ANIM_INTERVAL_MS = 800; // ~1.25 events/sec
+
+  function _refillQueue() {
+    _animQueue = [..._rawEvents].sort(() => Math.random() - 0.5);
+  }
+
+  function _startAnimLoop() {
+    if (_animTimer !== null) return;
+    _refillQueue();
+    _animTimer = setInterval(() => {
+      if (paused) return;
+      if (_animQueue.length === 0) _refillQueue();
+      if (_animQueue.length === 0) return;
+      spawnAttack(_animQueue.shift(), true);
+    }, ANIM_INTERVAL_MS);
+  }
+
   async function pollRealFeed() {
     try {
       const headers = {};
@@ -530,7 +550,7 @@
 
       const res = await fetch('./data/iocs.json', { cache: 'no-cache', headers });
 
-      if (res.status === 304) return; // not modified — skip re-processing
+      if (res.status === 304) return;
       if (!res.ok) { setIntelSource('NO DATA', false); return; }
 
       const lm = res.headers.get('Last-Modified');
@@ -542,12 +562,7 @@
       _rawEvents = events;
       setRealFeedStats(events);
       saveHistorySnapshot(events);
-
-      const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
-      const gap   = Math.max(500, Math.floor(55_000 / batch.length));
-      batch.forEach((ev, i) => {
-        setTimeout(() => { if (!paused) spawnAttack(ev, true); }, i * gap);
-      });
+      _startAnimLoop(); // no-op after first call; queue drains into fresh data naturally
       setIntelSource('LIVE INTEL', true);
       console.log(`[Threat Intel] ${events.length} events loaded`);
     } catch (_) {
