@@ -652,76 +652,61 @@ def fetch_threatfox(api_key=''):
     return events
 
 
-def fetch_dshield():
-    """Fetch top attacking IPs from SANS ISC DShield honeypots — no API key required."""
+def fetch_ipsum():
+    """Fetch high-confidence malicious IPs from IPsum (GitHub-hosted multi-feed aggregator).
+    IPsum aggregates 30+ public threat intelligence lists; each IP's score is the number
+    of lists it appears on. We sample IPs with score >= 5 for high confidence.
+    Hosted on GitHub raw content — no IP-based restrictions from CI runners.
+    """
     req = urllib.request.Request(
-        'https://isc.sans.edu/api/topips/sources/1000?json',
+        'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt',
         headers={'User-Agent': 'azimuth-threat-map/1.0'},
     )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        raw = json.loads(r.read())
-
-    # Response is a JSON array: [{rank, source (IP), reports, targets}, ...]
-    entries = raw if isinstance(raw, list) else raw.get('topips', [])
-
-    ip_data = {}
-    for entry in entries:
-        ip = entry.get('source') or entry.get('ipaddr') or entry.get('ip', '')
-        if ip and _is_public_ip(ip):
-            ip_data[ip] = int(entry.get('reports', entry.get('attacks', entry.get('count', 0))) or 0)
-
-    if not ip_data:
-        return []
-
-    ips = list(ip_data.keys())
-    print(f'  DShield: geolocating {len(ips)} IPs...')
-    geo = geolocate_ips(ips)
-
-    events = []
-    for ip, attack_count in ip_data.items():
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if src:
-            events.append({
-                'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
-                'ip': ip, 'family': 'DShield', 'first_seen': '',
-                'total_reports': attack_count,
-                'source': 'dshield',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_binary_defense():
-    """Fetch malicious IPs from Binary Defense IP Ban List — no API key required."""
-    req = urllib.request.Request(
-        'https://www.binarydefense.com/banlist.txt',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=30) as r:
         lines = r.read().decode('utf-8', errors='ignore').splitlines()
 
-    ips = [
-        ln.strip() for ln in lines
-        if ln.strip() and not ln.startswith('#') and _is_public_ip(ln.strip())
-    ]
-    if not ips:
+    high_conf = []
+    medium_conf = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln.startswith('#'):
+            continue
+        parts = ln.split('\t')
+        if len(parts) < 2:
+            continue
+        ip, score_str = parts[0], parts[1]
+        try:
+            score = int(score_str)
+        except ValueError:
+            continue
+        if not _is_public_ip(ip):
+            continue
+        if score >= 5:
+            high_conf.append((ip, score))
+        elif score >= 3:
+            medium_conf.append((ip, score))
+
+    # Prefer high-confidence IPs; fill up to 600 with medium-confidence
+    selected = high_conf + random.sample(medium_conf, min(max(0, 600 - len(high_conf)), len(medium_conf)))
+    selected = selected[:600]
+    random.shuffle(selected)
+
+    if not selected:
         return []
 
-    sample = random.sample(ips, min(500, len(ips)))
-    print(f'  Binary Defense: geolocating {len(sample)} IPs...')
-    geo = geolocate_ips(sample)
+    print(f'  IPsum: geolocating {len(selected)} IPs (high-conf: {len(high_conf)})...')
+    geo = geolocate_ips([ip for ip, _ in selected])
 
     events = []
-    for ip in sample:
+    for ip, score in selected:
         g = geo.get(ip, {})
         src = g.get('country')
         if src:
             events.append({
                 'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
-                'ip': ip, 'family': 'Binary Defense', 'first_seen': '',
-                'source': 'binarydefense',
+                'ip': ip, 'family': 'IPsum', 'first_seen': '',
+                'confidence': min(99, 50 + score * 5),
+                'source': 'ipsum',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -931,21 +916,13 @@ def main():
     else:
         print('Skipping URLhaus (THREATFOX_KEY not set — same abuse.ch key used for both)')
 
-    print('Fetching DShield (SANS ISC)...')
+    print('Fetching IPsum (multi-feed aggregator)...')
     try:
-        ds = fetch_dshield()
-        events.extend(ds)
-        print(f'  {len(ds)} events')
+        ip_sum = fetch_ipsum()
+        events.extend(ip_sum)
+        print(f'  {len(ip_sum)} events')
     except Exception as e:
-        print(f'  DShield failed: {e}')
-
-    print('Fetching Binary Defense...')
-    try:
-        bd_def = fetch_binary_defense()
-        events.extend(bd_def)
-        print(f'  {len(bd_def)} events')
-    except Exception as e:
-        print(f'  Binary Defense failed: {e}')
+        print(f'  IPsum failed: {e}')
 
     # Deduplicate by IP — keep first (richest) entry per IP across all feeds
     seen_ips: set = set()
