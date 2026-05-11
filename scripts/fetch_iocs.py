@@ -368,7 +368,7 @@ def _geolocate_ipapi(ips):
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    wait = 60 * (attempt + 1)
+                    wait = 10 * (attempt + 1)
                     print(f'  ip-api.com rate limited — waiting {wait}s before retry...')
                     time.sleep(wait)
                 else:
