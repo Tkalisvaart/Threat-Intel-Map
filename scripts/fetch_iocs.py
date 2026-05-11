@@ -488,6 +488,28 @@ def fetch_abuseipdb(api_key):
         14: 'recon', 18: 'recon', 22: 'recon', 5: 'recon',
         15: 'exploit', 16: 'exploit', 20: 'exploit', 21: 'exploit',
     }
+    CAT_FAMILY = {
+        4:  'DDoS Attack',
+        5:  'FTP Brute-Force',
+        7:  'Phishing',
+        11: 'Email Spam',
+        14: 'Port Scan',
+        15: 'Hacking',
+        16: 'SQL Injection',
+        18: 'Brute-Force',
+        20: 'Exploited Host',
+        21: 'Web App Attack',
+        22: 'SSH Brute-Force',
+        23: 'IoT Attack',
+    }
+    TYPE_FAMILY = {
+        'ddos':     'DDoS Attack',
+        'phishing': 'Phishing',
+        'recon':    'Port Scan',
+        'exploit':  'Web Attack',
+        'malware':  'Malware',
+        'c2':       'C2 Beacon',
+    }
     TYPE_PRIORITY = ['ddos', 'exploit', 'phishing', 'recon', 'malware']
 
     def pick_type(categories):
@@ -500,6 +522,12 @@ def fetch_abuseipdb(api_key):
             if t in types:
                 return t
         return 'malware'
+
+    def pick_family(categories, mtype):
+        for cat in (categories or []):
+            if cat in CAT_FAMILY:
+                return CAT_FAMILY[cat]
+        return TYPE_FAMILY.get(mtype, 'Malware')
 
     req = urllib.request.Request(
         'https://api.abuseipdb.com/api/v2/blacklist?confidenceMinimum=90&limit=1000&verbose',
@@ -539,13 +567,14 @@ def fetch_abuseipdb(api_key):
         for report in (entry.get('reports') or []):
             all_cats.extend(report.get('categories') or [])
         mtype        = pick_type(all_cats)
+        family       = pick_family(all_cats, mtype)
         first_seen   = (entry.get('lastReportedAt') or '')[:10]
         confidence   = entry.get('abuseConfidenceScore', 0)
         total_reports = entry.get('totalReports', 0)
         g            = geo_detail.get(ip, {})
         events.append({
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
-            'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen,
+            'ip': ip, 'family': family, 'first_seen': first_seen,
             'confidence': confidence, 'total_reports': total_reports,
             'source': 'abuseipdb',
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
