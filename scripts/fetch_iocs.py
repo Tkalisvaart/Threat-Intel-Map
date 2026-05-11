@@ -403,7 +403,7 @@ def fetch_blocklist_de():
         ('https://lists.blocklist.de/lists/apache.txt',     'exploit', 'Web Exploit'),
         ('https://lists.blocklist.de/lists/bots.txt',       'ddos',    'Botnet'),
         ('https://lists.blocklist.de/lists/bruteforce.txt', 'recon',   'Brute Force'),
-        ('https://lists.blocklist.de/lists/mail.txt',       'malware', 'Mail Spam'),
+        ('https://lists.blocklist.de/lists/mail.txt',       'phishing', 'Mail Spam'),
     ]
     ip_entries = []
     seen = set()
@@ -527,7 +527,11 @@ def fetch_abuseipdb(api_key):
         if not src:
             continue
         ip         = entry.get('ipAddress', '')
-        mtype      = pick_type(entry.get('categories', []))
+        # Blacklist verbose endpoint puts categories inside reports[], not at top level
+        all_cats = []
+        for report in (entry.get('reports') or []):
+            all_cats.extend(report.get('categories') or [])
+        mtype      = pick_type(all_cats)
         first_seen = (entry.get('lastReportedAt') or '')[:10]
         confidence = entry.get('abuseConfidenceScore', 0)
         g          = geo_detail.get(ip, {})
