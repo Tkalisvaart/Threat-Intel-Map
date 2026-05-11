@@ -306,17 +306,6 @@ window.AzimuthMap = (() => {
 
         const sc = proj.scale();
 
-        // Atmosphere glow ring — drawn outside clip so it wraps the edge
-        ctx.beginPath();
-        ctx.arc(mapW / 2, mapH / 2, sc + 6, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0, 180, 255, 0.07)';
-        ctx.lineWidth   = 12;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(mapW / 2, mapH / 2, sc, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0, 212, 255, 0.28)';
-        ctx.lineWidth   = 1.5;
-        ctx.stroke();
 
         // Clip overlay to the globe circle — nothing bleeds outside the sphere
         ctx.save();
