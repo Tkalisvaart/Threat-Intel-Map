@@ -40,7 +40,7 @@ window.AzimuthMap = (() => {
   function makeProj() {
     if (globeMode) {
       return d3.geoOrthographic()
-        .scale(Math.min(mapW, mapH) / 2.3)
+        .scale(Math.min(mapW, mapH) / 2.05)
         .translate([mapW / 2, mapH / 2])
         .rotate(globeRot)
         .clipAngle(90)
@@ -271,20 +271,27 @@ window.AzimuthMap = (() => {
 
   /* ── Stars ─────────────────────────────────────────────────── */
   function initStars() {
-    stars = Array.from({ length: 80 }, () => ({
+    stars = Array.from({ length: 220 }, () => ({
       x: Math.random(), y: Math.random(),
-      r: Math.random() * 1.1 + 0.2,
+      r: Math.random() * 1.4 + 0.15,
+      bright: Math.random() > 0.72,
     }));
   }
 
   function drawStars(c) {
     c.fillStyle   = '#ffffff';
-    c.globalAlpha = 0.35;
+    c.globalAlpha = 0.2;
     c.beginPath();
-    stars.forEach(s => {
+    stars.filter(s => !s.bright).forEach(s => {
       const x = s.x * mapW, y = s.y * mapH;
-      c.moveTo(x + s.r, y);
-      c.arc(x, y, s.r, 0, Math.PI * 2);
+      c.moveTo(x + s.r, y); c.arc(x, y, s.r, 0, Math.PI * 2);
+    });
+    c.fill();
+    c.globalAlpha = 0.65;
+    c.beginPath();
+    stars.filter(s => s.bright).forEach(s => {
+      const x = s.x * mapW, y = s.y * mapH;
+      c.moveTo(x + s.r, y); c.arc(x, y, s.r, 0, Math.PI * 2);
     });
     c.fill();
     c.globalAlpha = 1;
@@ -297,7 +304,7 @@ window.AzimuthMap = (() => {
 
       if (globeMode) {
         if (autoRotate && !paused && !isDragging) {
-          globeRot[0] += 0.07;
+          globeRot[0] += 0.05;
           proj.rotate(globeRot);
         }
 
@@ -355,39 +362,72 @@ window.AzimuthMap = (() => {
     if (!worldData) return;
 
     const { countries, borders } = worldData;
+    const sc = proj.scale();
+    const cx = mapW / 2, cy = mapH / 2;
 
-    // Opaque space background — no transparency anywhere on this canvas
+    // Opaque space background
     bgCtx.fillStyle = '#020810';
     bgCtx.fillRect(0, 0, mapW, mapH);
 
-    // Stars drawn before the sphere so the opaque globe covers them
+    // Stars — drawn before sphere so globe occludes them
     drawStars(bgCtx);
 
-    // Ocean sphere — solid gradient paints over stars inside the circle
+    // Ocean — radial gradient with clear light source from upper-left
     bgCtx.beginPath();
     _bgCgp({ type: 'Sphere' });
     const sg = bgCtx.createRadialGradient(
-      mapW / 2 - proj.scale() * 0.14, mapH / 2 - proj.scale() * 0.18, 0,
-      mapW / 2, mapH / 2, proj.scale()
+      cx - sc * 0.30, cy - sc * 0.34, 0,
+      cx, cy, sc
     );
-    sg.addColorStop(0,    '#0d2a4a');
-    sg.addColorStop(0.55, '#041020');
-    sg.addColorStop(1,    '#020810');
+    sg.addColorStop(0,    '#1c4e82');
+    sg.addColorStop(0.28, '#0d2e52');
+    sg.addColorStop(0.60, '#061628');
+    sg.addColorStop(1,    '#030b18');
     bgCtx.fillStyle = sg;
     bgCtx.fill();
 
-    // Countries — single batched fill
+    // Graticule grid lines — 20° spacing
+    bgCtx.beginPath();
+    _bgCgp(d3.geoGraticule().step([20, 20])());
+    bgCtx.strokeStyle = 'rgba(30, 80, 150, 0.22)';
+    bgCtx.lineWidth   = 0.3;
+    bgCtx.stroke();
+
+    // Countries — slightly elevated tone so landmasses read clearly
     bgCtx.beginPath();
     countries.features.forEach(f => _bgCgp(f));
-    bgCtx.fillStyle = '#0c1e32';
+    bgCtx.fillStyle = '#102640';
     bgCtx.fill();
 
-    // Borders — one stroke via topology mesh
+    // Borders
     bgCtx.beginPath();
     _bgCgp(borders);
-    bgCtx.strokeStyle = '#183650';
-    bgCtx.lineWidth   = 0.4;
+    bgCtx.strokeStyle = '#1e4e78';
+    bgCtx.lineWidth   = 0.5;
     bgCtx.stroke();
+
+    // Specular highlight — light reflected off the ocean, upper-left
+    bgCtx.beginPath();
+    _bgCgp({ type: 'Sphere' });
+    const hl = bgCtx.createRadialGradient(
+      cx - sc * 0.30, cy - sc * 0.36, 0,
+      cx, cy, sc * 0.95
+    );
+    hl.addColorStop(0,    'rgba(110, 190, 255, 0.10)');
+    hl.addColorStop(0.45, 'rgba( 50, 130, 230, 0.03)');
+    hl.addColorStop(1,    'rgba(  0,   0,   0, 0)');
+    bgCtx.fillStyle = hl;
+    bgCtx.fill();
+
+    // Limb darkening — natural vignette at sphere edge for 3-D depth
+    bgCtx.beginPath();
+    _bgCgp({ type: 'Sphere' });
+    const ld = bgCtx.createRadialGradient(cx, cy, sc * 0.62, cx, cy, sc);
+    ld.addColorStop(0,    'rgba(0,0,0,0)');
+    ld.addColorStop(0.55, 'rgba(0,0,0,0.07)');
+    ld.addColorStop(1,    'rgba(0,0,0,0.52)');
+    bgCtx.fillStyle = ld;
+    bgCtx.fill();
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
