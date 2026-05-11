@@ -233,6 +233,7 @@ def _geolocate_maxmind(ips):
 
 def _geolocate_ipapi(ips):
     """Batch-geolocate IPs via ip-api.com free tier. Returns {ip: {country, lat, lon, city, asn}}."""
+    import urllib.error
     results = {}
     chunks = [ips[i:i + 100] for i in range(0, len(ips), 100)]
     for idx, chunk in enumerate(chunks):
@@ -246,8 +247,21 @@ def _geolocate_ipapi(ips):
             headers={'Content-Type': 'application/json'},
             method='POST',
         )
-        with urllib.request.urlopen(req, timeout=20) as r:
-            batch = json.loads(r.read())
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    batch = json.loads(r.read())
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    wait = 60 * (attempt + 1)
+                    print(f'  ip-api.com rate limited — waiting {wait}s before retry...')
+                    time.sleep(wait)
+                else:
+                    raise
+        else:
+            print('  ip-api.com: max retries hit, skipping remaining IPs')
+            break
         for entry in batch:
             if entry.get('status') == 'success':
                 country = ISO_TO_COUNTRY.get(entry.get('countryCode', ''))
@@ -260,7 +274,7 @@ def _geolocate_ipapi(ips):
                         'asn': entry.get('as', ''),
                     }
         if idx + 1 < len(chunks):
-            time.sleep(2)
+            time.sleep(3)
     return results
 
 
@@ -419,7 +433,7 @@ def fetch_blocklist_de():
             with urllib.request.urlopen(req, timeout=20) as r:
                 lines = r.read().decode('utf-8').splitlines()
             ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
-            sample = random.sample(ips, min(200, len(ips)))
+            sample = random.sample(ips, min(100, len(ips)))
             for ip in sample:
                 if ip not in seen:
                     seen.add(ip)
@@ -461,7 +475,7 @@ def fetch_emerging_threats():
     if not ips:
         return []
 
-    sample = random.sample(ips, min(400, len(ips)))
+    sample = random.sample(ips, min(200, len(ips)))
     print(f'  Emerging Threats: geolocating {len(sample)} IPs...')
     geo = geolocate_ips(sample)
 
@@ -717,7 +731,7 @@ def fetch_ipsum():
 
     # Prefer high-confidence IPs; fill up to 600 with medium-confidence
     selected = high_conf + random.sample(medium_conf, min(max(0, 600 - len(high_conf)), len(medium_conf)))
-    selected = selected[:600]
+    selected = selected[:400]
     random.shuffle(selected)
 
     if not selected:
@@ -755,7 +769,7 @@ def fetch_cins():
     if not ips:
         return []
 
-    sample = random.sample(ips, min(600, len(ips)))
+    sample = random.sample(ips, min(400, len(ips)))
     print(f'  CINS Score: geolocating {len(sample)} IPs...')
     geo = geolocate_ips(sample)
 
