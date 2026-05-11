@@ -20,17 +20,19 @@ window.AzimuthFeed = (() => {
   let activeSearch = '';
 
   /* ── Public: ingest an attack event ───────────────────────── */
-  function addEvent(attack) {
+  function addEvent(attack, countStats = true) {
     const ip       = attack.ip || randomIP();
     const now      = Date.now();
     const typeInfo = TYPES[attack.type];
 
-    totalCount++;
-    attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
-    targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
-    typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
-    if (attack.family) familyMap[attack.family] = (familyMap[attack.family] || 0) + 1;
-    uniqueIPs.add(ip);
+    if (countStats) {
+      totalCount++;
+      attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
+      targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
+      typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
+      if (attack.family) familyMap[attack.family] = (familyMap[attack.family] || 0) + 1;
+      uniqueIPs.add(ip);
+    }
 
     perMinute.push(now);
     perMinute = perMinute.filter(t => now - t < 60_000);
@@ -119,11 +121,11 @@ window.AzimuthFeed = (() => {
   }
 
   function renderStats() {
-    setText('ts-rate',  perMinute.length);
-    setText('r-unique', uniqueIPs.size);
+    setText('ts-rate', perMinute.length);
     if (!window.AZIMUTH_REALSTATS) {
       setText('ts-total',     totalCount.toLocaleString());
       setText('ts-countries', Object.keys(attackerMap).length);
+      setText('r-unique',     uniqueIPs.size);
     }
   }
 
@@ -237,10 +239,16 @@ window.AzimuthFeed = (() => {
 
   /* ── Batch ingest from real feed (no animation) ─────────────── */
   function ingestBatch(events) {
+    // Reset and rebuild from the authoritative dataset on every poll
+    attackerMap = {};
+    targetMap   = {};
+    familyMap   = {};
+    typeMap     = {};
     events.forEach(e => {
-      if (e.src) attackerMap[e.src] = (attackerMap[e.src] || 0) + 1;
-      if (e.tgt) targetMap[e.tgt]   = (targetMap[e.tgt]   || 0) + 1;
-      if (e.family) familyMap[e.family] = (familyMap[e.family] || 0) + 1;
+      if (e.src)    attackerMap[e.src]    = (attackerMap[e.src]    || 0) + 1;
+      if (e.tgt)    targetMap[e.tgt]      = (targetMap[e.tgt]      || 0) + 1;
+      if (e.family) familyMap[e.family]   = (familyMap[e.family]   || 0) + 1;
+      if (e.type)   typeMap[e.type]       = (typeMap[e.type]       || 0) + 1;
     });
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
     renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');

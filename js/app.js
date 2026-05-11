@@ -43,11 +43,11 @@
   await AzimuthMap.init();
 
   /* ── Spawn an attack ────────────────────────────────────────── */
-  function spawnAttack(ev) {
+  function spawnAttack(ev, skipStats = false) {
     const typeInfo = TYPES[ev.type];
     if (!typeInfo || !GEO[ev.src] || !GEO[ev.tgt]) return;
     const attack = { ...ev, color: typeInfo.color };
-    AzimuthFeed.addEvent(attack);
+    AzimuthFeed.addEvent(attack, !skipStats);
     AzimuthMap.addArc(attack);
   }
 
@@ -416,63 +416,8 @@
     }
   }
 
-  /* ── Bar chart — attack type distribution ───────────────────── */
-  function drawTypeBarChart() {
-    const chart = setupChartCanvas('history-canvas');
-    if (!chart) return;
-    const { ctx, W } = chart;
-
-    const CH  = 44;
-    const n   = TYPE_ORDER.length;
-    const gap = Math.max(2, Math.floor(W * 0.025));
-    const barW = (W - (n - 1) * gap) / n;
-
-    const tm  = window.AZIMUTH_TYPEMAP || AzimuthFeed.getTypeMap();
-    const vals = TYPE_ORDER.map(t => tm[t] || 0);
-    const maxVal = Math.max(...vals, 1);
-
-    if (vals.every(v => v === 0)) {
-      ctx.fillStyle = 'rgba(106,143,170,0.3)';
-      ctx.font = '8px JetBrains Mono, monospace';
-      ctx.fillText('Collecting…', 2, 28);
-      return;
-    }
-
-    const ABBR = { malware:'MAL', c2:'C2', exploit:'EXP', phishing:'PHI', ddos:'DoS', recon:'RCN' };
-
-    TYPE_ORDER.forEach((type, i) => {
-      const val  = vals[i];
-      const barH = val ? Math.max(2, Math.round((val / maxVal) * CH)) : 0;
-      const x    = Math.round(i * (barW + gap));
-      const color = _TYPES[type].color;
-
-      if (barH > 0) {
-        const grad = ctx.createLinearGradient(0, CH - barH, 0, CH);
-        grad.addColorStop(0, hexToRgba(color, 0.88));
-        grad.addColorStop(1, hexToRgba(color, 0.28));
-        ctx.fillStyle = grad;
-        ctx.fillRect(x, CH - barH, barW, barH);
-      }
-
-      ctx.fillStyle = 'rgba(106,143,170,0.55)';
-      ctx.font = '7px JetBrains Mono, monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(ABBR[type] || type.slice(0,3).toUpperCase(), x + barW / 2, 56);
-    });
-
-    ctx.textAlign = 'left';
-    if (maxVal > 0) {
-      ctx.fillStyle = 'rgba(106,143,170,0.3)';
-      ctx.font = '7px JetBrains Mono, monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText(maxVal.toLocaleString(), W, 9);
-      ctx.textAlign = 'left';
-    }
-  }
-
-  setInterval(() => { drawLineChart(); drawTypeBarChart(); }, 1000);
+  setInterval(drawLineChart, 1000);
   drawLineChart();
-  drawTypeBarChart();
 
   /* ── Public API (for real CTI feed integration) ─────────────── */
   /**
@@ -597,12 +542,11 @@
       _rawEvents = events;
       setRealFeedStats(events);
       saveHistorySnapshot(events);
-      drawTypeBarChart();
 
       const batch = [...events].sort(() => Math.random() - 0.5).slice(0, 60);
       const gap   = Math.max(500, Math.floor(55_000 / batch.length));
       batch.forEach((ev, i) => {
-        setTimeout(() => { if (!paused) spawnAttack(ev); }, i * gap);
+        setTimeout(() => { if (!paused) spawnAttack(ev, true); }, i * gap);
       });
       setIntelSource('LIVE INTEL', true);
       console.log(`[Threat Intel] ${events.length} events loaded`);

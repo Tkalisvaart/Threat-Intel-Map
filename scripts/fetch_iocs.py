@@ -13,6 +13,44 @@ import time
 import urllib.request
 from pathlib import Path
 
+_META_FILE = Path(__file__).parent.parent / 'data' / 'fetch_meta.json'
+_IOCS_FILE = Path(__file__).parent.parent / 'data' / 'iocs.json'
+# AbuseIPDB free tier allows only 5 blacklist requests/day — enforce a 23-hour cooldown.
+_ABUSEIPDB_COOLDOWN = 23 * 3600
+
+
+def _load_meta():
+    try:
+        return json.loads(_META_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_meta(meta):
+    _META_FILE.parent.mkdir(exist_ok=True)
+    _META_FILE.write_text(json.dumps(meta, indent=2))
+
+
+def _abuseipdb_ready(meta):
+    last = meta.get('abuseipdb_last_fetch', 0)
+    elapsed = time.time() - last
+    if elapsed < _ABUSEIPDB_COOLDOWN:
+        remaining_h = (_ABUSEIPDB_COOLDOWN - elapsed) / 3600
+        print(f'  Skipping AbuseIPDB — fetched {elapsed/3600:.1f}h ago, cooldown {remaining_h:.1f}h remaining')
+        return False
+    return True
+
+
+def _cached_abuseipdb_events():
+    """Return existing AbuseIPDB events already in iocs.json."""
+    try:
+        existing = json.loads(_IOCS_FILE.read_text())
+        cached = [e for e in existing if e.get('family') == 'AbuseIPDB']
+        print(f'  Reusing {len(cached)} cached AbuseIPDB events from iocs.json')
+        return cached
+    except Exception:
+        return []
+
 # Load MaxMind GeoLite2 databases if available (downloaded by CI before this script runs).
 # Falls back to ip-api.com batch API when databases are absent.
 _DB_DIR = Path(__file__).parent.parent
@@ -646,6 +684,7 @@ def fetch_urlhaus(api_key=''):
 
 def main():
     events = []
+    meta = _load_meta()
 
     print('Fetching Feodo Tracker...')
     try:
@@ -681,13 +720,19 @@ def main():
 
     abuseipdb_key = os.environ.get('ABUSEIPDB_KEY', '')
     if abuseipdb_key:
-        print('Fetching AbuseIPDB...')
-        try:
-            ab = fetch_abuseipdb(abuseipdb_key)
-            events.extend(ab)
-            print(f'  {len(ab)} events')
-        except Exception as e:
-            print(f'  AbuseIPDB failed: {e}')
+        print('Checking AbuseIPDB rate limit (max 1 call per 23 hours)...')
+        if _abuseipdb_ready(meta):
+            print('Fetching AbuseIPDB...')
+            try:
+                ab = fetch_abuseipdb(abuseipdb_key)
+                events.extend(ab)
+                print(f'  {len(ab)} events')
+                meta['abuseipdb_last_fetch'] = time.time()
+            except Exception as e:
+                print(f'  AbuseIPDB failed: {e}')
+                events.extend(_cached_abuseipdb_events())
+        else:
+            events.extend(_cached_abuseipdb_events())
     else:
         print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
 
@@ -728,7 +773,9 @@ def main():
 
     random.shuffle(events)
 
-    out = Path(__file__).parent.parent / 'data' / 'iocs.json'
+    _save_meta(meta)
+
+    out = _IOCS_FILE
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(events, separators=(',', ':')))
     print(f'Wrote {len(events)} indicators → {out}')
