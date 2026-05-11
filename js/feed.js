@@ -174,7 +174,7 @@ window.AzimuthFeed = (() => {
   function renderLeaderboard(dataMap, containerId, barCls, cntCls) {
     const el = document.getElementById(containerId);
     if (!el) return;
-    const sorted = Object.entries(dataMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const sorted = Object.entries(dataMap).sort((a, b) => b[1] - a[1]).slice(0, 15);
     const max    = sorted[0] ? sorted[0][1] : 1;
     el.innerHTML = sorted.map(([country, count], i) => `
       <div class="attacker-row">

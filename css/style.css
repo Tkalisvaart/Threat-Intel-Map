@@ -458,7 +458,8 @@ html, body {
 
 /* Attackers + Targets lists */
 #attackers, #targets {
-  overflow: hidden;
+  overflow-y: auto;
+  max-height: 160px;
   padding: 2px 0;
   flex-shrink: 0;
 }
