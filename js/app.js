@@ -463,23 +463,24 @@
     const highConf = valid.filter(e => (e.confidence || 0) >= 90).length;
     set('r-highconf', highConf.toLocaleString());
 
-    // Intel source breakdown (mapped from family field)
+    // Intel source breakdown — prefer explicit source field, fall back to family-based detection
     const blocklistFamilies = new Set([
       'SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam',
       'IMAP Brute Force','FTP Brute Force','Persistent Attacker','VoIP Scan',
     ]);
+    const esrc = e => e.source;
     const feedCounts = {
-      feodo:          valid.filter(e => e.type === 'c2' && (e.family || '') !== 'AbuseIPDB').length,
-      openphish:      valid.filter(e => e.family === 'Phishing Site').length,
-      blocklist:      valid.filter(e => blocklistFamilies.has(e.family || '')).length,
-      emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
-      cins:           valid.filter(e => e.family === 'CINS Score').length,
-      abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
-      dshield:        valid.filter(e => e.family === 'DShield').length,
-      binarydefense:  valid.filter(e => e.family === 'Binary Defense').length,
+      feodo:          valid.filter(e => esrc(e) === 'feodo'          || (!esrc(e) && e.type === 'c2' && (e.family || '') !== 'AbuseIPDB')).length,
+      openphish:      valid.filter(e => esrc(e) === 'openphish'      || (!esrc(e) && e.family === 'Phishing Site')).length,
+      blocklist:      valid.filter(e => esrc(e) === 'blocklist'       || (!esrc(e) && blocklistFamilies.has(e.family || ''))).length,
+      emergingthreats:valid.filter(e => esrc(e) === 'emergingthreats'|| (!esrc(e) && e.family === 'Compromised Host')).length,
+      cins:           valid.filter(e => esrc(e) === 'cins'           || (!esrc(e) && e.family === 'CINS Score')).length,
+      abuseipdb:      valid.filter(e => esrc(e) === 'abuseipdb'      || (!esrc(e) && (e.family || '') === 'AbuseIPDB')).length,
+      dshield:        valid.filter(e => esrc(e) === 'dshield'        || (!esrc(e) && e.family === 'DShield')).length,
+      binarydefense:  valid.filter(e => esrc(e) === 'binarydefense'  || (!esrc(e) && e.family === 'Binary Defense')).length,
     };
-    const urlhausCount = valid.filter(e => e.active !== undefined).length;
-    const threatfoxCount = valid.filter(e => (e.port || 0) > 0 && (e.confidence || 0) > 0 && (e.family || '') !== 'AbuseIPDB').length;
+    const urlhausCount  = valid.filter(e => esrc(e) === 'urlhaus'   || (!esrc(e) && e.active !== undefined)).length;
+    const threatfoxCount = valid.filter(e => esrc(e) === 'threatfox' || (!esrc(e) && (e.port || 0) > 0 && e.active === undefined && (e.family || '') !== 'AbuseIPDB')).length;
     const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length
       + (threatfoxCount > 0 ? 1 : 0)
       + (urlhausCount > 0 ? 1 : 0);
@@ -515,8 +516,8 @@
 
     window.AZIMUTH_SOURCES = {
       ...feedCounts,
-      threatfox: valid.filter(e => (e.port || 0) > 0 && (e.confidence || 0) > 0 && (e.family || '') !== 'AbuseIPDB').length,
-      urlhaus:   valid.filter(e => e.active !== undefined).length,
+      threatfox: threatfoxCount,
+      urlhaus:   urlhausCount,
       updatedAt: _dataLastModified,
     };
   }

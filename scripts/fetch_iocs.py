@@ -315,6 +315,7 @@ def fetch_feodo():
         events.append({
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
             'ip': ip, 'family': family, 'first_seen': first_seen, 'port': port,
+            'source': 'feodo',
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
@@ -390,6 +391,7 @@ def fetch_openphish():
             events.append({
                 'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing',
                 'ip': ip, 'family': 'Phishing Site', 'first_seen': '',
+                'source': 'openphish',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -439,6 +441,7 @@ def fetch_blocklist_de():
             events.append({
                 'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
                 'ip': ip, 'family': family_label, 'first_seen': '',
+                'source': 'blocklist',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -470,6 +473,7 @@ def fetch_emerging_threats():
             events.append({
                 'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
                 'ip': ip, 'family': 'Compromised Host', 'first_seen': '',
+                'source': 'emergingthreats',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -543,6 +547,7 @@ def fetch_abuseipdb(api_key):
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
             'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen,
             'confidence': confidence, 'total_reports': total_reports,
+            'source': 'abuseipdb',
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
@@ -640,6 +645,7 @@ def fetch_threatfox(api_key=''):
             'type': entry['mtype'], 'ip': entry['ip'],
             'family': entry['family'], 'first_seen': entry['first_seen'],
             'confidence': entry['confidence'], 'port': entry['port'],
+            'source': 'threatfox',
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
@@ -680,6 +686,7 @@ def fetch_dshield():
                 'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
                 'ip': ip, 'family': 'DShield', 'first_seen': '',
                 'total_reports': attack_count,
+                'source': 'dshield',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -714,6 +721,7 @@ def fetch_binary_defense():
             events.append({
                 'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
                 'ip': ip, 'family': 'Binary Defense', 'first_seen': '',
+                'source': 'binarydefense',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -745,6 +753,7 @@ def fetch_cins():
             events.append({
                 'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
                 'ip': ip, 'family': 'CINS Score', 'first_seen': '',
+                'source': 'cins',
                 'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
                 'city': g.get('city', ''), 'asn': g.get('asn', ''),
             })
@@ -827,6 +836,7 @@ def fetch_urlhaus(api_key=''):
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
             'ip': ip, 'family': entry['family'], 'first_seen': '',
             'active': entry['status'] == 'online',
+            'source': 'urlhaus',
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
