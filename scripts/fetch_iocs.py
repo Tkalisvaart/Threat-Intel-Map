@@ -56,6 +56,42 @@ def _cached_abuseipdb_events():
         return []
 
 
+def _github_raw_iocs_url():
+    """Derive the raw GitHub URL for iocs.json from the git remote origin."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            capture_output=True, text=True,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        remote = result.stdout.strip()
+        # Strip embedded credentials (https://user:token@github.com/...)
+        if '@github.com' in remote:
+            remote = 'https://github.com/' + remote.split('@github.com/', 1)[1]
+        # https://github.com/USER/REPO.git → https://raw.githubusercontent.com/USER/REPO/main/data/iocs.json
+        raw = remote.replace('https://github.com/', 'https://raw.githubusercontent.com/')
+        raw = raw.removesuffix('.git')
+        return raw + '/main/data/iocs.json'
+    except Exception:
+        return None
+
+
+def _github_abuseipdb_events():
+    """Fetch AbuseIPDB events from the GitHub-hosted iocs.json (kept fresh by CI)."""
+    url = _github_raw_iocs_url()
+    if not url:
+        raise RuntimeError('Could not determine GitHub raw URL from git remote')
+    req = urllib.request.Request(url, headers={'User-Agent': 'azimuth-threat-map/1.0'})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read())
+    events = [e for e in data if e.get('source') == 'abuseipdb' or e.get('family') == 'AbuseIPDB']
+    for e in events:
+        e.setdefault('source', 'abuseipdb')
+    print(f'  Fetched {len(events)} AbuseIPDB events from GitHub iocs.json')
+    return events
+
+
 def _cins_ready(meta):
     last = meta.get('cins_last_fetch', 0)
     elapsed = time.time() - last
@@ -933,6 +969,14 @@ def main():
     else:
         events.extend(_cached_cins_events())
 
+    def _abuseipdb_github_fallback(reason):
+        print(f'  {reason} — pulling AbuseIPDB events from GitHub iocs.json...')
+        try:
+            events.extend(_github_abuseipdb_events())
+        except Exception as e2:
+            print(f'  GitHub fallback failed: {e2} — using local cache')
+            events.extend(_cached_abuseipdb_events())
+
     abuseipdb_key = os.environ.get('ABUSEIPDB_KEY', '')
     if abuseipdb_key:
         print('Checking AbuseIPDB rate limit (max 1 call per 23 hours)...')
@@ -944,12 +988,11 @@ def main():
                 print(f'  {len(ab)} events')
                 meta['abuseipdb_last_fetch'] = time.time()
             except Exception as e:
-                print(f'  AbuseIPDB failed: {e}')
-                events.extend(_cached_abuseipdb_events())
+                _abuseipdb_github_fallback(f'AbuseIPDB API failed: {e}')
         else:
-            events.extend(_cached_abuseipdb_events())
+            _abuseipdb_github_fallback('AbuseIPDB on cooldown')
     else:
-        print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
+        _abuseipdb_github_fallback('No ABUSEIPDB_KEY set')
 
     threatfox_key = os.environ.get('THREATFOX_KEY', '')
     print('Fetching ThreatFox...')
