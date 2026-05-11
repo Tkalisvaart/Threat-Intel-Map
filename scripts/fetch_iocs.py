@@ -339,12 +339,12 @@ def fetch_openphish():
         return []
 
     # Resolve all hosts to IPs (mix of raw IPs and domain lookups) in parallel
-    sample = random.sample(hosts, min(200, len(hosts)))
+    sample = random.sample(hosts, min(500, len(hosts)))
     print(f'  OpenPhish: resolving {len(sample)} hosts...')
     host_to_ip = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as pool:
         futures = {pool.submit(_resolve, h): h for h in sample}
-        done, _ = concurrent.futures.wait(futures, timeout=30)
+        done, _ = concurrent.futures.wait(futures, timeout=60)
         for fut in done:
             host = futures[fut]
             ip = fut.result()
@@ -392,7 +392,7 @@ def fetch_blocklist_de():
             with urllib.request.urlopen(req, timeout=20) as r:
                 lines = r.read().decode('utf-8').splitlines()
             ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
-            sample = random.sample(ips, min(50, len(ips)))
+            sample = random.sample(ips, min(200, len(ips)))
             for ip in sample:
                 if ip not in seen:
                     seen.add(ip)
@@ -433,7 +433,7 @@ def fetch_emerging_threats():
     if not ips:
         return []
 
-    sample = random.sample(ips, min(80, len(ips)))
+    sample = random.sample(ips, min(400, len(ips)))
     print(f'  Emerging Threats: geolocating {len(sample)} IPs...')
     geo = geolocate_ips(sample)
 
@@ -487,7 +487,7 @@ def fetch_abuseipdb(api_key):
     if not entries:
         return []
 
-    sample = random.sample(entries, min(150, len(entries)))
+    sample = random.sample(entries, min(1000, len(entries)))
 
     # Collect IPs for enrichment
     ip_list = [entry.get('ipAddress', '') for entry in sample if entry.get('ipAddress')]
@@ -641,14 +641,14 @@ def fetch_urlhaus(api_key=''):
     # Prioritise online (active) threats
     online  = [e for e in host_entries if e['status'] == 'online']
     offline = [e for e in host_entries if e['status'] != 'online']
-    sample  = (random.sample(online, min(60, len(online))) +
-               random.sample(offline, min(40, len(offline))))
+    sample  = (random.sample(online, min(200, len(online))) +
+               random.sample(offline, min(100, len(offline))))
 
     print(f'  URLhaus: resolving {len(sample)} hosts ({len(online)} active)...')
     host_to_ip = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as pool:
         futures = {pool.submit(_resolve, e['host']): e for e in sample}
-        done, _ = concurrent.futures.wait(futures, timeout=25)
+        done, _ = concurrent.futures.wait(futures, timeout=60)
         for fut in done:
             entry = futures[fut]
             ip = fut.result()
