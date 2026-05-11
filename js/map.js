@@ -40,7 +40,7 @@ window.AzimuthMap = (() => {
   function makeProj() {
     if (globeMode) {
       return d3.geoOrthographic()
-        .scale(Math.min(mapW, mapH) / 2.05)
+        .scale(Math.min(mapW, mapH) / 2.55)
         .translate([mapW / 2, mapH / 2])
         .rotate(globeRot)
         .clipAngle(90)
