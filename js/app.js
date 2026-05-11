@@ -241,6 +241,8 @@
       { key: 'abuseipdb',       label: 'AbuseIPDB'        },
       { key: 'threatfox',       label: 'ThreatFox'        },
       { key: 'urlhaus',         label: 'URLhaus'          },
+      { key: 'dshield',         label: 'DShield'          },
+      { key: 'binarydefense',   label: 'Binary Defense'   },
     ];
 
     if (!s) {
@@ -473,13 +475,15 @@
       emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
       cins:           valid.filter(e => e.family === 'CINS Score').length,
       abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
+      dshield:        valid.filter(e => e.family === 'DShield').length,
+      binarydefense:  valid.filter(e => e.family === 'Binary Defense').length,
     };
     const urlhausCount = valid.filter(e => e.active !== undefined).length;
     const threatfoxCount = valid.filter(e => (e.port || 0) > 0 && (e.confidence || 0) > 0 && (e.family || '') !== 'AbuseIPDB').length;
     const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length
       + (threatfoxCount > 0 ? 1 : 0)
       + (urlhausCount > 0 ? 1 : 0);
-    set('r-feeds', `${activeFeeds}/8`);
+    set('r-feeds', `${activeFeeds}/10`);
 
     // Total documented attack events from AbuseIPDB report counts
     const atkEvents = valid.reduce((sum, e) => sum + (e.total_reports || 0), 0);

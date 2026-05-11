@@ -550,36 +550,54 @@ def fetch_abuseipdb(api_key):
 
 
 def fetch_threatfox(api_key=''):
-    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch). Requires a free API key."""
-    payload = json.dumps({'query': 'get_iocs', 'days': 1}).encode()
-    headers = {'Content-Type': 'application/json', 'User-Agent': 'azimuth-threat-map/1.0'}
+    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch).
+    Uses authenticated API (days=7) when a key is available, otherwise falls back
+    to the public ip:port export which requires no authentication.
+    """
+    iocs = []
+
     if api_key:
-        headers['Auth-Key'] = api_key
-    req = urllib.request.Request(
-        'https://threatfox-api.abuse.ch/api/v1/',
-        data=payload,
-        headers=headers,
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.loads(r.read())
+        payload = json.dumps({'query': 'get_iocs', 'days': 7}).encode()
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'azimuth-threat-map/1.0',
+            'Auth-Key': api_key,
+        }
+        req = urllib.request.Request(
+            'https://threatfox-api.abuse.ch/api/v1/',
+            data=payload, headers=headers, method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read())
+        status = data.get('query_status')
+        if status == 'ok':
+            iocs = data.get('data', []) or []
+        else:
+            print(f'  ThreatFox API returned status={status!r} — falling back to public export')
+            api_key = ''  # trigger public fallback
 
-    status = data.get('query_status')
-    if status in ('unknown_auth_key', 'unauthorized'):
-        raise ValueError('ThreatFox API key invalid or missing — get a free key at abuse.ch/register')
-    if status != 'ok':
-        return []
+    if not api_key:
+        # Public JSON export — no auth needed, updated every ~5 min
+        req = urllib.request.Request(
+            'https://threatfox.abuse.ch/export/json/ip-port/recent/',
+            headers={'User-Agent': 'azimuth-threat-map/1.0'},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = json.loads(r.read())
+        if isinstance(raw, dict):
+            iocs = raw.get('data', []) or []
+        elif isinstance(raw, list):
+            iocs = raw
 
-    iocs = data.get('data', []) or []
     seen = set()
     ip_entries = []
 
     for ioc in iocs:
         if ioc.get('ioc_type') != 'ip:port':
             continue
-        ioc_value = ioc.get('ioc_value', '')
+        # API uses 'ioc_value'; public export uses 'ioc'
+        ioc_value = ioc.get('ioc_value') or ioc.get('ioc', '')
         try:
-            # Handle both IPv4 (1.2.3.4:80) and IPv6 ([::1]:80)
             if ioc_value.startswith('['):
                 ip = ioc_value[1:ioc_value.index(']')]
             else:
@@ -592,10 +610,8 @@ def fetch_threatfox(api_key=''):
 
         family     = ioc.get('malware_printable', '') or ''
         confidence = ioc.get('confidence_level', 50)
-        threat_type= ioc.get('threat_type', '')
         first_seen = (ioc.get('first_seen') or '')[:10]
-        tags       = [t.get('tag_name', '') for t in (ioc.get('tags') or []) if isinstance(t, dict)]
-        mtype      = map_malware_type(family) if family else map_threat_type(threat_type)
+        mtype      = map_malware_type(family) if family else map_threat_type(ioc.get('threat_type', ''))
         port       = 0
         try:
             port = int(ioc_value.rsplit(':', 1)[1])
@@ -627,6 +643,80 @@ def fetch_threatfox(api_key=''):
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
+    return events
+
+
+def fetch_dshield():
+    """Fetch top attacking IPs from SANS ISC DShield honeypots — no API key required."""
+    req = urllib.request.Request(
+        'https://isc.sans.edu/api/topips/sources/1000/json',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        raw = json.loads(r.read())
+
+    # Response may be a list or wrapped in {"topips": [...]}
+    entries = raw if isinstance(raw, list) else raw.get('topips', [])
+
+    ip_data = {}
+    for entry in entries:
+        ip = entry.get('ipaddr') or entry.get('ip', '')
+        if ip and _is_public_ip(ip):
+            ip_data[ip] = int(entry.get('attacks', entry.get('count', 0)) or 0)
+
+    if not ip_data:
+        return []
+
+    ips = list(ip_data.keys())
+    print(f'  DShield: geolocating {len(ips)} IPs...')
+    geo = geolocate_ips(ips)
+
+    events = []
+    for ip, attack_count in ip_data.items():
+        g = geo.get(ip, {})
+        src = g.get('country')
+        if src:
+            events.append({
+                'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
+                'ip': ip, 'family': 'DShield', 'first_seen': '',
+                'total_reports': attack_count,
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
+    return events
+
+
+def fetch_binary_defense():
+    """Fetch malicious IPs from Binary Defense IP Ban List — no API key required."""
+    req = urllib.request.Request(
+        'https://www.binarydefense.com/banlist.txt',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        lines = r.read().decode('utf-8', errors='ignore').splitlines()
+
+    ips = [
+        ln.strip() for ln in lines
+        if ln.strip() and not ln.startswith('#') and _is_public_ip(ln.strip())
+    ]
+    if not ips:
+        return []
+
+    sample = random.sample(ips, min(500, len(ips)))
+    print(f'  Binary Defense: geolocating {len(sample)} IPs...')
+    geo = geolocate_ips(sample)
+
+    events = []
+    for ip in sample:
+        g = geo.get(ip, {})
+        src = g.get('country')
+        if src:
+            events.append({
+                'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
+                'ip': ip, 'family': 'Binary Defense', 'first_seen': '',
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
     return events
 
 
@@ -812,16 +902,13 @@ def main():
         print('Skipping AbuseIPDB (ABUSEIPDB_KEY not set)')
 
     threatfox_key = os.environ.get('THREATFOX_KEY', '')
-    if threatfox_key:
-        print('Fetching ThreatFox...')
-        try:
-            tf = fetch_threatfox(threatfox_key)
-            events.extend(tf)
-            print(f'  {len(tf)} indicators')
-        except Exception as e:
-            print(f'  ThreatFox failed: {e}')
-    else:
-        print('Skipping ThreatFox (THREATFOX_KEY not set — get a free key at abuse.ch/register)')
+    print('Fetching ThreatFox...')
+    try:
+        tf = fetch_threatfox(threatfox_key)
+        events.extend(tf)
+        print(f'  {len(tf)} indicators')
+    except Exception as e:
+        print(f'  ThreatFox failed: {e}')
 
     if threatfox_key:
         print('Fetching URLhaus...')
@@ -833,6 +920,22 @@ def main():
             print(f'  URLhaus failed: {e}')
     else:
         print('Skipping URLhaus (THREATFOX_KEY not set — same abuse.ch key used for both)')
+
+    print('Fetching DShield (SANS ISC)...')
+    try:
+        ds = fetch_dshield()
+        events.extend(ds)
+        print(f'  {len(ds)} events')
+    except Exception as e:
+        print(f'  DShield failed: {e}')
+
+    print('Fetching Binary Defense...')
+    try:
+        bd_def = fetch_binary_defense()
+        events.extend(bd_def)
+        print(f'  {len(bd_def)} events')
+    except Exception as e:
+        print(f'  Binary Defense failed: {e}')
 
     # Deduplicate by IP — keep first (richest) entry per IP across all feeds
     seen_ips: set = set()
