@@ -462,7 +462,10 @@
     set('r-highconf', highConf.toLocaleString());
 
     // Intel source breakdown (mapped from family field)
-    const blocklistFamilies = new Set(['SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam']);
+    const blocklistFamilies = new Set([
+      'SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam',
+      'IMAP Brute Force','FTP Brute Force','Persistent Attacker','VoIP Scan',
+    ]);
     const feedCounts = {
       feodo:          valid.filter(e => e.type === 'c2' && (e.family || '') !== 'AbuseIPDB').length,
       openphish:      valid.filter(e => e.family === 'Phishing Site').length,
@@ -478,9 +481,9 @@
       + (urlhausCount > 0 ? 1 : 0);
     set('r-feeds', `${activeFeeds}/8`);
 
-    // Active threats (URLhaus online status)
-    const activeCount = valid.filter(e => e.active === true).length;
-    set('r-active', activeCount.toLocaleString());
+    // Total documented attack events from AbuseIPDB report counts
+    const atkEvents = valid.reduce((sum, e) => sum + (e.total_reports || 0), 0);
+    set('r-events', atkEvents > 0 ? atkEvents.toLocaleString() : '—');
 
     // Global threat level — based on C2/exploit ratio (highest-risk types)
     const sevEl = document.getElementById('ts-severity');
@@ -530,7 +533,7 @@
   /* ── Continuous animation loop ─────────────────────────────── */
   let _animQueue  = [];
   let _animTimer  = null;
-  const ANIM_INTERVAL_MS = 800; // ~1.25 events/sec
+  const ANIM_INTERVAL_MS = 350; // ~2.9 events/sec
 
   function _refillQueue() {
     _animQueue = [..._rawEvents].sort(() => Math.random() - 0.5);

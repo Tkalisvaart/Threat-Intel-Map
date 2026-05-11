@@ -399,11 +399,14 @@ def fetch_openphish():
 def fetch_blocklist_de():
     """Fetch attack IPs from Blocklist.de by category — no API key required."""
     feeds = [
-        ('https://lists.blocklist.de/lists/ssh.txt',        'recon',   'SSH Brute Force'),
-        ('https://lists.blocklist.de/lists/apache.txt',     'exploit', 'Web Exploit'),
-        ('https://lists.blocklist.de/lists/bots.txt',       'ddos',    'Botnet'),
-        ('https://lists.blocklist.de/lists/bruteforce.txt', 'recon',   'Brute Force'),
+        ('https://lists.blocklist.de/lists/ssh.txt',        'recon',    'SSH Brute Force'),
+        ('https://lists.blocklist.de/lists/apache.txt',     'exploit',  'Web Exploit'),
+        ('https://lists.blocklist.de/lists/bots.txt',       'ddos',     'Botnet'),
         ('https://lists.blocklist.de/lists/mail.txt',       'phishing', 'Mail Spam'),
+        ('https://lists.blocklist.de/lists/imap.txt',       'recon',    'IMAP Brute Force'),
+        ('https://lists.blocklist.de/lists/ftp.txt',        'recon',    'FTP Brute Force'),
+        ('https://lists.blocklist.de/lists/strongips.txt',  'exploit',  'Persistent Attacker'),
+        ('https://lists.blocklist.de/lists/sip.txt',        'recon',    'VoIP Scan'),
     ]
     ip_entries = []
     seen = set()
@@ -531,14 +534,15 @@ def fetch_abuseipdb(api_key):
         all_cats = []
         for report in (entry.get('reports') or []):
             all_cats.extend(report.get('categories') or [])
-        mtype      = pick_type(all_cats)
-        first_seen = (entry.get('lastReportedAt') or '')[:10]
-        confidence = entry.get('abuseConfidenceScore', 0)
-        g          = geo_detail.get(ip, {})
+        mtype        = pick_type(all_cats)
+        first_seen   = (entry.get('lastReportedAt') or '')[:10]
+        confidence   = entry.get('abuseConfidenceScore', 0)
+        total_reports = entry.get('totalReports', 0)
+        g            = geo_detail.get(ip, {})
         events.append({
             'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
             'ip': ip, 'family': 'AbuseIPDB', 'first_seen': first_seen,
-            'confidence': confidence,
+            'confidence': confidence, 'total_reports': total_reports,
             'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
             'city': g.get('city', ''), 'asn': g.get('asn', ''),
         })
