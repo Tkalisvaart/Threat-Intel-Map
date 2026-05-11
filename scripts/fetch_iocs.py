@@ -17,6 +17,8 @@ _META_FILE = Path(__file__).parent.parent / 'data' / 'fetch_meta.json'
 _IOCS_FILE = Path(__file__).parent.parent / 'data' / 'iocs.json'
 # AbuseIPDB free tier allows only 5 blacklist requests/day — enforce a 23-hour cooldown.
 _ABUSEIPDB_COOLDOWN = 23 * 3600
+# CINS Score: be polite — refresh at most every 6 hours.
+_CINS_COOLDOWN = 6 * 3600
 
 
 def _load_meta():
@@ -47,6 +49,26 @@ def _cached_abuseipdb_events():
         existing = json.loads(_IOCS_FILE.read_text())
         cached = [e for e in existing if e.get('family') == 'AbuseIPDB']
         print(f'  Reusing {len(cached)} cached AbuseIPDB events from iocs.json')
+        return cached
+    except Exception:
+        return []
+
+
+def _cins_ready(meta):
+    last = meta.get('cins_last_fetch', 0)
+    elapsed = time.time() - last
+    if elapsed < _CINS_COOLDOWN:
+        remaining_h = (_CINS_COOLDOWN - elapsed) / 3600
+        print(f'  Skipping CINS Score — fetched {elapsed/3600:.1f}h ago, cooldown {remaining_h:.1f}h remaining')
+        return False
+    return True
+
+
+def _cached_cins_events():
+    try:
+        existing = json.loads(_IOCS_FILE.read_text())
+        cached = [e for e in existing if e.get('family') == 'CINS Score']
+        print(f'  Reusing {len(cached)} cached CINS Score events from iocs.json')
         return cached
     except Exception:
         return []
@@ -600,6 +622,37 @@ def fetch_threatfox(api_key=''):
     return events
 
 
+def fetch_cins():
+    """Fetch high-confidence malicious IPs from CINS Score — no API key required."""
+    req = urllib.request.Request(
+        'https://cinsscore.com/list/ci-badguys.txt',
+        headers={'User-Agent': 'azimuth-threat-map/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        lines = r.read().decode('utf-8').splitlines()
+
+    ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#') and _is_public_ip(ln.strip())]
+    if not ips:
+        return []
+
+    sample = random.sample(ips, min(600, len(ips)))
+    print(f'  CINS Score: geolocating {len(sample)} IPs...')
+    geo = geolocate_ips(sample)
+
+    events = []
+    for ip in sample:
+        g = geo.get(ip, {})
+        src = g.get('country')
+        if src:
+            events.append({
+                'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
+                'ip': ip, 'family': 'CINS Score', 'first_seen': '',
+                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
+                'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            })
+    return events
+
+
 def fetch_urlhaus(api_key=''):
     """Fetch recent malware URLs from URLhaus (abuse.ch). Requires a free abuse.ch API key."""
     headers = {'User-Agent': 'azimuth-threat-map/1.0'}
@@ -717,6 +770,20 @@ def main():
         print(f'  {len(et)} events')
     except Exception as e:
         print(f'  Emerging Threats failed: {e}')
+
+    print('Checking CINS Score rate limit (max 1 fetch per 6 hours)...')
+    if _cins_ready(meta):
+        print('Fetching CINS Score...')
+        try:
+            cins = fetch_cins()
+            events.extend(cins)
+            print(f'  {len(cins)} events')
+            meta['cins_last_fetch'] = time.time()
+        except Exception as e:
+            print(f'  CINS Score failed: {e}')
+            events.extend(_cached_cins_events())
+    else:
+        events.extend(_cached_cins_events())
 
     abuseipdb_key = os.environ.get('ABUSEIPDB_KEY', '')
     if abuseipdb_key:

@@ -237,6 +237,7 @@
       { key: 'openphish',       label: 'OpenPhish'        },
       { key: 'blocklist',       label: 'Blocklist.de'     },
       { key: 'emergingthreats', label: 'Emerging Threats' },
+      { key: 'cins',            label: 'CINS Score'       },
       { key: 'abuseipdb',       label: 'AbuseIPDB'        },
       { key: 'threatfox',       label: 'ThreatFox'        },
       { key: 'urlhaus',         label: 'URLhaus'          },
@@ -465,6 +466,7 @@
       openphish:      valid.filter(e => e.family === 'Phishing Site').length,
       blocklist:      valid.filter(e => blocklistFamilies.has(e.family || '')).length,
       emergingthreats:valid.filter(e => e.family === 'Compromised Host').length,
+      cins:           valid.filter(e => e.family === 'CINS Score').length,
       abuseipdb:      valid.filter(e => (e.family || '') === 'AbuseIPDB').length,
     };
     const urlhausCount = valid.filter(e => e.active !== undefined).length;
@@ -472,7 +474,7 @@
     const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length
       + (threatfoxCount > 0 ? 1 : 0)
       + (urlhausCount > 0 ? 1 : 0);
-    set('r-feeds', `${activeFeeds}/7`);
+    set('r-feeds', `${activeFeeds}/8`);
 
     // Active threats (URLhaus online status)
     const activeCount = valid.filter(e => e.active === true).length;
