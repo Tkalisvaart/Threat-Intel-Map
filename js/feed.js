@@ -188,10 +188,24 @@ window.AzimuthFeed = (() => {
       </div>`).join('');
   }
 
+  // Intel source names and generic category labels that are not real malware families
+  const _GENERIC_FAMILIES = new Set([
+    'AbuseIPDB', 'CINS Score', 'IPsum', 'ThreatFox IOC', 'URLhaus',
+    'Phishing Site', 'Compromised Host',
+    'SSH Brute Force', 'Web Exploit', 'Botnet', 'Mail Spam',
+    'IMAP Brute Force', 'FTP Brute Force', 'Persistent Attacker', 'VoIP Scan',
+    'DDoS Attack', 'Port Scan', 'Hacking', 'SQL Injection', 'Brute-Force',
+    'Exploited Host', 'Web App Attack', 'SSH Brute-Force', 'FTP Brute-Force',
+    'Email Spam', 'IoT Attack', 'Web Attack', 'Malware', 'C2 Beacon',
+    'Unknown malware', '32-bit',
+  ]);
+
   function renderTopFamilies() {
     const el = document.getElementById('top-families');
     if (!el) return;
-    const sorted = Object.entries(familyMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const sorted = Object.entries(familyMap)
+      .filter(([f]) => !_GENERIC_FAMILIES.has(f))
+      .sort((a, b) => b[1] - a[1]).slice(0, 5);
     const max = sorted[0] ? sorted[0][1] : 1;
     el.innerHTML = sorted.map(([family, count], i) => `
       <div class="attacker-row">
