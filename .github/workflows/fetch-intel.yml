@@ -17,14 +17,25 @@ jobs:
       - name: Install Python dependencies
         run: pip install geoip2
 
+      - name: Get cache-key week
+        id: week
+        run: echo "val=$(date +%Y-%V)" >> $GITHUB_OUTPUT
+
+      - name: Cache MaxMind databases
+        id: cache-maxmind
+        uses: actions/cache@v4
+        with:
+          path: |
+            GeoLite2-City.mmdb
+            GeoLite2-ASN.mmdb
+          key: maxmind-${{ secrets.MAXMIND_ACCOUNT_ID }}-${{ steps.week.outputs.val }}
+
       - name: Download MaxMind GeoLite2 databases
-        continue-on-error: true
+        if: steps.cache-maxmind.outputs.cache-hit != 'true'
         env:
           MAXMIND_ACCOUNT_ID: ${{ secrets.MAXMIND_ACCOUNT_ID }}
           MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
         run: |
-          # Requires two secrets: MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY
-          # Both are found in your MaxMind account under Services > My License Key
           if [ -z "$MAXMIND_ACCOUNT_ID" ] || [ -z "$MAXMIND_LICENSE_KEY" ]; then
             echo "Skipping MaxMind (secrets not set) — will use ip-api.com fallback"
             exit 0
@@ -35,10 +46,9 @@ jobs:
               -u "${MAXMIND_ACCOUNT_ID}:${MAXMIND_LICENSE_KEY}" \
               "https://download.maxmind.com/geoip/databases/${DB}/download?suffix=tar.gz")
             if [ "$HTTP_CODE" != "200" ]; then
-              echo "MaxMind download failed for ${DB}: HTTP ${HTTP_CODE}"
-              echo "Check MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY, and that the GeoLite2 EULA is accepted at maxmind.com"
+              echo "MaxMind download failed for ${DB}: HTTP ${HTTP_CODE} — will use ip-api.com fallback"
               rm -f "$TMPFILE"
-              exit 1
+              exit 0
             fi
             DIR=$(mktemp -d)
             tar -xz -C "$DIR" < "$TMPFILE"
