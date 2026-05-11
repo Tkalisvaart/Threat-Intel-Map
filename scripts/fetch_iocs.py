@@ -655,20 +655,20 @@ def fetch_threatfox(api_key=''):
 def fetch_dshield():
     """Fetch top attacking IPs from SANS ISC DShield honeypots — no API key required."""
     req = urllib.request.Request(
-        'https://isc.sans.edu/api/topips/sources/1000/json',
+        'https://isc.sans.edu/api/topips/sources/1000?json',
         headers={'User-Agent': 'azimuth-threat-map/1.0'},
     )
     with urllib.request.urlopen(req, timeout=20) as r:
         raw = json.loads(r.read())
 
-    # Response may be a list or wrapped in {"topips": [...]}
+    # Response is a JSON array: [{rank, source (IP), reports, targets}, ...]
     entries = raw if isinstance(raw, list) else raw.get('topips', [])
 
     ip_data = {}
     for entry in entries:
-        ip = entry.get('ipaddr') or entry.get('ip', '')
+        ip = entry.get('source') or entry.get('ipaddr') or entry.get('ip', '')
         if ip and _is_public_ip(ip):
-            ip_data[ip] = int(entry.get('attacks', entry.get('count', 0)) or 0)
+            ip_data[ip] = int(entry.get('reports', entry.get('attacks', entry.get('count', 0))) or 0)
 
     if not ip_data:
         return []
