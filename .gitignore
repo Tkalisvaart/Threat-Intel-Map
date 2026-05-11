@@ -1,3 +1,6 @@
+# Local config — never commit API keys
+.env
+
 # Python
 __pycache__/
 *.py[cod]
