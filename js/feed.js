@@ -120,11 +120,36 @@ window.AzimuthFeed = (() => {
       countEl.textContent = total.toLocaleString() + ' indicators';
     }
 
-    // Incremental update: prepend one new item, drop the last — no full rebuild
+    // Incremental update: prepend one new item with FLIP push-down animation
     if (isNewItem && list.children.length > 0 && items.length > 0) {
       const newItem = items[0];
       if (activeFilter === 'all' || newItem.type === activeFilter) {
+        // FLIP: snapshot positions of items that will shift down
+        const shifting = Array.from(list.children).slice(0, 14);
+        const tops = shifting.map(el => el.getBoundingClientRect().top);
+
         list.insertBefore(buildFeedItem(newItem, true), list.firstChild);
+
+        // Snap each item back to its old screen position, then animate down
+        shifting.forEach((el, i) => {
+          const dy = el.getBoundingClientRect().top - tops[i];
+          if (!dy) return;
+          el.style.transition = 'none';
+          el.style.transform  = `translateY(${-dy}px)`;
+        });
+
+        void list.offsetHeight; // force reflow
+
+        shifting.forEach(el => {
+          el.style.transition = 'transform 0.32s cubic-bezier(0.16, 1, 0.3, 1)';
+          el.style.transform  = '';
+        });
+
+        setTimeout(() => shifting.forEach(el => {
+          el.style.transform  = '';
+          el.style.transition = '';
+        }), 380);
+
         while (list.children.length > 35) list.lastChild.remove();
         return;
       }

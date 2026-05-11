@@ -47,7 +47,9 @@ def _cached_abuseipdb_events():
     """Return existing AbuseIPDB events already in iocs.json."""
     try:
         existing = json.loads(_IOCS_FILE.read_text())
-        cached = [e for e in existing if e.get('family') == 'AbuseIPDB']
+        cached = [e for e in existing if e.get('family') == 'AbuseIPDB' or e.get('source') == 'abuseipdb']
+        for e in cached:
+            e.setdefault('source', 'abuseipdb')
         print(f'  Reusing {len(cached)} cached AbuseIPDB events from iocs.json')
         return cached
     except Exception:
@@ -67,7 +69,9 @@ def _cins_ready(meta):
 def _cached_cins_events():
     try:
         existing = json.loads(_IOCS_FILE.read_text())
-        cached = [e for e in existing if e.get('family') == 'CINS Score']
+        cached = [e for e in existing if e.get('family') == 'CINS Score' or e.get('source') == 'cins']
+        for e in cached:
+            e.setdefault('source', 'cins')
         print(f'  Reusing {len(cached)} cached CINS Score events from iocs.json')
         return cached
     except Exception:
@@ -625,23 +629,31 @@ def fetch_threatfox(api_key=''):
             api_key = ''  # trigger public fallback
 
     if not api_key:
-        # Public JSON export — no auth needed, updated every ~5 min
+        # Public JSON export — no auth needed, updated every ~5 min.
+        # Format: date-keyed dict {"YYYY-MM-DD HH:MM:SS": [ioc, ...], ...}
         req = urllib.request.Request(
             'https://threatfox.abuse.ch/export/json/ip-port/recent/',
             headers={'User-Agent': 'azimuth-threat-map/1.0'},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             raw = json.loads(r.read())
-        if isinstance(raw, dict):
-            iocs = raw.get('data', []) or []
-        elif isinstance(raw, list):
+        if isinstance(raw, list):
             iocs = raw
+        elif isinstance(raw, dict):
+            if 'data' in raw:
+                iocs = raw['data'] or []
+            else:
+                # Date-keyed export: {"2025-05-10 00:00:00": [ioc, ...], ...}
+                for v in raw.values():
+                    if isinstance(v, list):
+                        iocs.extend(v)
 
     seen = set()
     ip_entries = []
 
     for ioc in iocs:
-        if ioc.get('ioc_type') != 'ip:port':
+        # API responses have ioc_type; public export is implicitly ip:port
+        if api_key and ioc.get('ioc_type') != 'ip:port':
             continue
         # API uses 'ioc_value'; public export uses 'ioc'
         ioc_value = ioc.get('ioc_value') or ioc.get('ioc', '')
@@ -800,8 +812,8 @@ def fetch_urlhaus(api_key=''):
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
 
-    if data.get('query_status') == 'unknown_auth_key' or data.get('error') == 'Unauthorized':
-        raise ValueError('URLhaus API key invalid or missing — get a free key at abuse.ch/register')
+    if api_key and (data.get('query_status') == 'unknown_auth_key' or data.get('error') == 'Unauthorized'):
+        raise ValueError('URLhaus API key invalid — get a free key at abuse.ch/register')
 
     urls = data.get('urls', [])
     if not urls:
@@ -948,16 +960,13 @@ def main():
     except Exception as e:
         print(f'  ThreatFox failed: {e}')
 
-    if threatfox_key:
-        print('Fetching URLhaus...')
-        try:
-            uh = fetch_urlhaus(threatfox_key)
-            events.extend(uh)
-            print(f'  {len(uh)} indicators')
-        except Exception as e:
-            print(f'  URLhaus failed: {e}')
-    else:
-        print('Skipping URLhaus (THREATFOX_KEY not set — same abuse.ch key used for both)')
+    print('Fetching URLhaus...')
+    try:
+        uh = fetch_urlhaus(threatfox_key)  # key is optional; works without one
+        events.extend(uh)
+        print(f'  {len(uh)} indicators')
+    except Exception as e:
+        print(f'  URLhaus failed: {e}')
 
     print('Fetching IPsum (multi-feed aggregator)...')
     try:
