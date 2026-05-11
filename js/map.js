@@ -444,25 +444,34 @@ window.AzimuthMap = (() => {
   }
 
   function _drawHeatToCtx(c) {
-    // Attacker heat — bucket events by exact lat/lon (0.5° resolution)
-    const events = window.AzimuthFeed.getAllEvents();
-    const srcBuckets = {};
-    events.forEach(e => {
-      const lon = (e.lon && e.lat) ? e.lon : (GEO[e.src] || [])[0];
-      const lat = (e.lon && e.lat) ? e.lat : (GEO[e.src] || [])[1];
-      if (!lon && !lat) return;
-      const key = `${(lon / 0.5 | 0)},${(lat / 0.5 | 0)}`;
-      if (!srcBuckets[key]) srcBuckets[key] = { lon, lat, count: 0 };
-      srcBuckets[key].count++;
+    // Attacker heat — full dataset via attackerMap (country → count), supplemented
+    // with per-IP lat/lon from recent animated events for sub-country precision
+    const attackerMap = window.AzimuthFeed.getAttackerMap();
+    Object.entries(attackerMap).forEach(([country, count]) => {
+      const geo = GEO[country];
+      if (!geo) return;
+      if (!isGlobeVisible(geo)) return;
+      const pt = proj(geo);
+      if (!pt) return;
+      drawHeatPoint(c, pt[0], pt[1], count, 255, 51, 85);
     });
-    Object.values(srcBuckets).forEach(({ lon, lat, count }) => {
+
+    // Overlay per-IP precision from recent events (adds sub-country detail)
+    const recentBuckets = {};
+    window.AzimuthFeed.getAllEvents().forEach(e => {
+      if (!e.lon || !e.lat) return;
+      const key = `${(e.lon / 0.5 | 0)},${(e.lat / 0.5 | 0)}`;
+      if (!recentBuckets[key]) recentBuckets[key] = { lon: e.lon, lat: e.lat, count: 0 };
+      recentBuckets[key].count++;
+    });
+    Object.values(recentBuckets).forEach(({ lon, lat, count }) => {
       if (!isGlobeVisible([lon, lat])) return;
       const pt = proj([lon, lat]);
       if (!pt) return;
       drawHeatPoint(c, pt[0], pt[1], count, 255, 51, 85);
     });
 
-    // Target heat — country centroids only (estimated, no exact coords)
+    // Target heat — country centroids (estimated, no exact coords)
     Object.entries(window.AzimuthFeed.getTargetMap()).forEach(([country, count]) => {
       const geo = GEO[country];
       if (!geo) return;

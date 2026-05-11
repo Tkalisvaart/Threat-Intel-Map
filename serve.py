@@ -16,6 +16,7 @@ Optional API keys — create a .env file in this directory:
 """
 
 import os
+import socket
 import sys
 import subprocess
 import threading
@@ -65,6 +66,10 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache, must-revalidate')
+        super().end_headers()
+
     def log_message(self, fmt, *args):
         code = args[1] if len(args) > 1 else ''
         if code not in ('200', '304'):
@@ -72,6 +77,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
+    skip_refresh = any(a in ('-skip-ioc-refresh', '--skip-ioc-refresh') for a in sys.argv)
+
     load_dotenv()
 
     print(f'Azimuth dev server → http://localhost:{PORT}')
@@ -80,11 +87,16 @@ if __name__ == '__main__':
         print(f'  API keys: {", ".join(keys)}')
     else:
         print('  No .env found — AbuseIPDB / ThreatFox / MaxMind feeds will be skipped or limited')
+    if skip_refresh:
+        print('  IOC refresh: disabled (--skip-ioc-refresh)')
     print()
 
-    threading.Thread(target=refresh_loop, daemon=True).start()
-
     try:
-        HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
+        HTTPServer.allow_reuse_address = True
+        server = HTTPServer(('0.0.0.0', PORT), Handler)
+        print(f'Ready — open http://localhost:{PORT}')
+        if not skip_refresh:
+            threading.Thread(target=refresh_loop, daemon=True).start()
+        server.serve_forever()
     except KeyboardInterrupt:
         print('\nStopped.')

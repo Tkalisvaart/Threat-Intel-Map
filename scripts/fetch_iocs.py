@@ -73,7 +73,9 @@ def _cached_abuseipdb_events():
 
 
 def _github_raw_iocs_url():
-    """Derive the raw GitHub URL for iocs.json from the git remote origin."""
+    """Derive the raw GitHub URL and auth token from git remote origin.
+    Returns (url, token) — token may be None for public repos.
+    """
     try:
         import subprocess
         result = subprocess.run(
@@ -82,23 +84,32 @@ def _github_raw_iocs_url():
             cwd=str(_ROOT),
         )
         remote = result.stdout.strip()
-        # Strip embedded credentials (https://user:token@github.com/...)
-        if '@github.com' in remote:
+        token = None
+        if remote.startswith('https://') and '@github.com' in remote:
+            # https://user:TOKEN@github.com/OWNER/REPO.git
+            creds = remote.split('https://', 1)[1].split('@github.com', 1)[0]
+            if ':' in creds:
+                token = creds.split(':', 1)[1]
             remote = 'https://github.com/' + remote.split('@github.com/', 1)[1]
-        # https://github.com/USER/REPO.git → https://raw.githubusercontent.com/USER/REPO/main/data/iocs.json
+        elif '@github.com:' in remote:
+            # SSH: git@github.com:OWNER/REPO.git
+            remote = 'https://github.com/' + remote.split('@github.com:', 1)[1]
         raw = remote.replace('https://github.com/', 'https://raw.githubusercontent.com/')
         raw = raw.removesuffix('.git')
-        return raw + '/main/data/iocs.json'
+        return raw + '/main/data/iocs.json', token
     except Exception:
-        return None
+        return None, None
 
 
 def _github_abuseipdb_events():
     """Fetch AbuseIPDB events from the GitHub-hosted iocs.json (kept fresh by CI)."""
-    url = _github_raw_iocs_url()
+    url, token = _github_raw_iocs_url()
     if not url:
         raise RuntimeError('Could not determine GitHub raw URL from git remote')
-    req = urllib.request.Request(url, headers={'User-Agent': 'azimuth-threat-map/1.0'})
+    headers = {'User-Agent': 'azimuth-threat-map/1.0'}
+    if token:
+        headers['Authorization'] = f'token {token}'
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
     events = [e for e in data if e.get('source') == 'abuseipdb' or e.get('family') == 'AbuseIPDB']
@@ -361,6 +372,7 @@ def _geolocate_ipapi(ips):
             headers={'Content-Type': 'application/json'},
             method='POST',
         )
+        batch = None
         for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=20) as r:
@@ -373,9 +385,9 @@ def _geolocate_ipapi(ips):
                     time.sleep(wait)
                 else:
                     raise
-        else:
-            print('  ip-api.com: max retries hit, skipping remaining IPs')
-            break
+        if batch is None:
+            print('  ip-api.com: max retries hit, skipping batch')
+            continue
         for entry in batch:
             if entry.get('status') == 'success':
                 country = ISO_TO_COUNTRY.get(entry.get('countryCode', ''))
@@ -388,7 +400,7 @@ def _geolocate_ipapi(ips):
                         'asn': entry.get('as', ''),
                     }
         if idx + 1 < len(chunks):
-            time.sleep(3)
+            time.sleep(5)
     return results
 
 
