@@ -13,12 +13,28 @@ import time
 import urllib.request
 from pathlib import Path
 
-_META_FILE = Path(__file__).parent.parent / 'data' / 'fetch_meta.json'
-_IOCS_FILE = Path(__file__).parent.parent / 'data' / 'iocs.json'
+_ROOT      = Path(__file__).parent.parent
+_META_FILE = _ROOT / 'data' / 'fetch_meta.json'
+_IOCS_FILE = _ROOT / 'data' / 'iocs.json'
 # AbuseIPDB free tier allows only 5 blacklist requests/day — enforce a 23-hour cooldown.
 _ABUSEIPDB_COOLDOWN = 23 * 3600
 # CINS Score: be polite — refresh at most every 6 hours.
 _CINS_COOLDOWN = 6 * 3600
+
+
+def _load_dotenv():
+    """Load .env from the project root into os.environ (skipped if running in CI)."""
+    env_file = _ROOT / '.env'
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, val = line.partition('=')
+        os.environ.setdefault(key.strip(), val.strip())
+
+_load_dotenv()
 
 
 def _load_meta():
@@ -38,7 +54,7 @@ def _abuseipdb_ready(meta):
     elapsed = time.time() - last
     if elapsed < _ABUSEIPDB_COOLDOWN:
         remaining_h = (_ABUSEIPDB_COOLDOWN - elapsed) / 3600
-        print(f'  Skipping AbuseIPDB — fetched {elapsed/3600:.1f}h ago, cooldown {remaining_h:.1f}h remaining')
+        print(f'  API cooldown active ({elapsed/3600:.1f}h since last call, {remaining_h:.1f}h remaining) — using GitHub data')
         return False
     return True
 
@@ -63,7 +79,7 @@ def _github_raw_iocs_url():
         result = subprocess.run(
             ['git', 'remote', 'get-url', 'origin'],
             capture_output=True, text=True,
-            cwd=str(Path(__file__).parent.parent),
+            cwd=str(_ROOT),
         )
         remote = result.stdout.strip()
         # Strip embedded credentials (https://user:token@github.com/...)
