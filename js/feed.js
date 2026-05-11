@@ -76,7 +76,15 @@ window.AzimuthFeed = (() => {
       );
     }
 
-    document.getElementById('feed-count').textContent = items.length + ' indicators';
+    const total = (window.AZIMUTH_REALSTATS && window.AZIMUTH_TOTAL_COUNT)
+      ? window.AZIMUTH_TOTAL_COUNT
+      : items.length;
+    const countEl = document.getElementById('feed-count');
+    if (window.AZIMUTH_REALSTATS && (activeFilter !== 'all' || activeSearch)) {
+      countEl.textContent = items.length + ' of ' + total.toLocaleString() + ' indicators';
+    } else {
+      countEl.textContent = total.toLocaleString() + ' indicators';
+    }
 
     list.innerHTML = '';
     items.slice(0, 35).forEach((item, i) => {

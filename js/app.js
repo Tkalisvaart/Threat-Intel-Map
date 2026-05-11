@@ -442,6 +442,8 @@
     const { TYPES, GEO } = window.AZIMUTH_DATA;
     const valid = events.filter(e => GEO[e.src]);
 
+    window.AZIMUTH_TOTAL_COUNT = valid.length;
+
     // Pre-populate heatmap + leaderboards immediately from real data
     AzimuthFeed.ingestBatch(valid);
 
