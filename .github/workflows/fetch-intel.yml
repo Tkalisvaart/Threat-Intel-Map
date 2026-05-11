@@ -57,7 +57,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git reset --soft origin/main
           git add data/iocs.json data/fetch_meta.json
           git diff --staged --quiet || git commit -m "chore: refresh threat intel data"
-          git pull --rebase origin main
           git push
