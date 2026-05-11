@@ -50,7 +50,7 @@ window.AzimuthFeed = (() => {
     feedItems.unshift({ src: attack.src, tgt: attack.tgt, type: attack.type, ip, time: timeStr(), family: attack.family || '', first_seen: attack.first_seen || '', confidence: attack.confidence || 0, active: attack.active || false, port: attack.port || 0, asn: attack.asn || '', city: attack.city || '', lat: attack.lat || 0, lon: attack.lon || 0 });
     if (feedItems.length > MAX_FEED) feedItems.pop();
 
-    renderFeed();
+    renderFeed(true);
     renderStats();
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
     renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
@@ -59,8 +59,43 @@ window.AzimuthFeed = (() => {
   }
 
   /* ── Rendering ─────────────────────────────────────────────── */
-  function renderFeed() {
-    const list  = document.getElementById('feed-list');
+  function buildFeedItem(item, isNew) {
+    const t        = TYPES[item.type];
+    const vtUrl    = `https://www.virustotal.com/gui/ip-address/${item.ip}`;
+    const age      = ageStr(item.first_seen);
+    const confBadge   = item.confidence >= 90
+      ? `<span class="fi-conf">CONF ${item.confidence}%</span>` : '';
+    const activeBadge = item.active
+      ? `<span class="fi-active">LIVE</span>` : '';
+    const portBadge   = item.port
+      ? `<span class="fi-port">:${item.port}</span>` : '';
+    const asnShort    = item.asn ? item.asn.split(' ').slice(0, 2).join(' ') : '';
+    const asnBadge    = asnShort
+      ? `<span class="fi-asn" title="${item.asn}">${asnShort}</span>` : '';
+
+    const div = document.createElement('div');
+    div.className = 'feed-item' + (isNew ? ' new-item' : '');
+    div.innerHTML = `
+      <div class="fi-top">
+        <span class="fi-type ${t.cls}">${t.label}</span>
+        ${activeBadge}
+        <span class="fi-src" data-country="${item.src}" role="button">${item.src}</span>
+        <span class="fi-arr">→</span>
+        <span class="fi-tgt" data-country="${item.tgt}" role="button">${item.tgt}</span>
+        ${age ? `<span class="fi-time">${age}</span>` : ''}
+      </div>
+      <div class="fi-bot">
+        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}
+        ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
+        ${asnBadge}
+        ${confBadge}
+      </div>`;
+    return div;
+  }
+
+  function renderFeed(isNewItem = false) {
+    const list = document.getElementById('feed-list');
+
     let items = activeFilter === 'all'
       ? feedItems
       : feedItems.filter(f => f.type === activeFilter);
@@ -77,8 +112,7 @@ window.AzimuthFeed = (() => {
     }
 
     const total = (window.AZIMUTH_REALSTATS && window.AZIMUTH_TOTAL_COUNT)
-      ? window.AZIMUTH_TOTAL_COUNT
-      : items.length;
+      ? window.AZIMUTH_TOTAL_COUNT : items.length;
     const countEl = document.getElementById('feed-count');
     if (window.AZIMUTH_REALSTATS && (activeFilter !== 'all' || activeSearch)) {
       countEl.textContent = items.length + ' of ' + total.toLocaleString() + ' indicators';
@@ -86,45 +120,20 @@ window.AzimuthFeed = (() => {
       countEl.textContent = total.toLocaleString() + ' indicators';
     }
 
+    // Incremental update: prepend one new item, drop the last — no full rebuild
+    if (isNewItem && list.children.length > 0 && items.length > 0) {
+      const newItem = items[0];
+      if (activeFilter === 'all' || newItem.type === activeFilter) {
+        list.insertBefore(buildFeedItem(newItem, true), list.firstChild);
+        while (list.children.length > 35) list.lastChild.remove();
+        return;
+      }
+    }
+
+    // Full rebuild (initial load, filter change, search change)
     list.innerHTML = '';
     items.slice(0, 35).forEach((item, i) => {
-      const t      = TYPES[item.type];
-      const vtUrl  = `https://www.virustotal.com/gui/ip-address/${item.ip}`;
-      const age    = ageStr(item.first_seen);
-      const confBadge = item.confidence >= 90
-        ? `<span class="fi-conf">CONF ${item.confidence}%</span>`
-        : '';
-      const activeBadge = item.active
-        ? `<span class="fi-active">LIVE</span>`
-        : '';
-      const portBadge = item.port
-        ? `<span class="fi-port">:${item.port}</span>`
-        : '';
-      const asnShort = item.asn
-        ? item.asn.split(' ').slice(0, 2).join(' ')
-        : '';
-      const asnBadge = asnShort
-        ? `<span class="fi-asn" title="${item.asn}">${asnShort}</span>`
-        : '';
-
-      const div = document.createElement('div');
-      div.className = 'feed-item' + (i === 0 ? ' new-item' : '');
-      div.innerHTML = `
-      <div class="fi-top">
-        <span class="fi-type ${t.cls}">${t.label}</span>
-        ${activeBadge}
-        <span class="fi-src" data-country="${item.src}" role="button">${item.src}</span>
-        <span class="fi-arr">→</span>
-        <span class="fi-tgt" data-country="${item.tgt}" role="button">${item.tgt}</span>
-        ${age ? `<span class="fi-time">${age}</span>` : ''}
-      </div>
-      <div class="fi-bot">
-        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}
-        ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
-        ${asnBadge}
-        ${confBadge}
-      </div>`;
-      list.appendChild(div);
+      list.appendChild(buildFeedItem(item, i === 0 && isNewItem));
     });
   }
 
