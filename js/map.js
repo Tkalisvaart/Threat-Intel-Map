@@ -32,6 +32,7 @@ window.AzimuthMap = (() => {
   let _heatOff    = null;
   let _heatOffCtx = null;
   let _lastHeatTs = 0;
+  let hotSrcs     = new Map(); // srcKey → { geo, exp }
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -261,6 +262,8 @@ window.AzimuthMap = (() => {
       impacted: false,
     });
 
+    const srcKey = attack.src || `${attack.lon},${attack.lat}`;
+    hotSrcs.set(srcKey, { geo: srcGeo, exp: Date.now() + 2200 });
     const dot = document.querySelector(`.city-dot[data-country="${attack.src}"]`);
     if (dot) { dot.classList.add('hot'); setTimeout(() => dot.classList.remove('hot'), 2200); }
   }
@@ -336,6 +339,27 @@ window.AzimuthMap = (() => {
         ctx.beginPath();
         visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
         ctx.stroke();
+
+        // Red dots for active attack sources
+        const nowTs = Date.now();
+        for (const [k, { exp }] of hotSrcs) { if (nowTs > exp) hotSrcs.delete(k); }
+        const hotPts = [];
+        hotSrcs.forEach(({ geo }) => {
+          if (!isGlobeVisible(geo)) return;
+          const pt = proj(geo);
+          if (pt) hotPts.push(pt);
+        });
+        if (hotPts.length) {
+          ctx.fillStyle = 'rgba(255, 51, 85, 0.5)';
+          ctx.beginPath();
+          hotPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 51, 85, 0.8)';
+          ctx.lineWidth   = 0.5;
+          ctx.beginPath();
+          hotPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
+          ctx.stroke();
+        }
 
         if (showHeat) drawHeat();
         drawPulseRings();
