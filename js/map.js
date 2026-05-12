@@ -148,9 +148,8 @@ window.AzimuthMap = (() => {
       if (x < 4 || x > mapW - 4 || y < 4 || y > mapH - 4) return;
       const dot = document.createElementNS(NS, 'circle');
       dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '1.8');
-      const cls = srcSet.has(name) ? 'city-dot hot'
-                : tgtSet.has(name) ? 'city-dot tgt'
-                : 'city-dot';
+      if (!srcSet.has(name) && !tgtSet.has(name)) return;
+      const cls = srcSet.has(name) ? 'city-dot hot' : 'city-dot tgt';
       dot.setAttribute('class', cls);
       dot.setAttribute('data-country', name);
       svg.appendChild(dot);
@@ -334,7 +333,7 @@ window.AzimuthMap = (() => {
         ctx.arc(mapW / 2, mapH / 2, sc - 0.5, 0, Math.PI * 2);
         ctx.clip();
 
-        // City dots — three passes: dim neutral, bright cyan targets, red sources
+        // City dots — targets in blue, sources in red
         function visPts(geos) {
           return geos.filter(g => isGlobeVisible(g)).map(g => proj(g)).filter(Boolean);
         }
@@ -350,9 +349,6 @@ window.AzimuthMap = (() => {
           pts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
           ctx.stroke();
         }
-        const allVisPts = visPts(Object.values(GEO));
-        fillDots(allVisPts, 'rgba(0,212,255,0.10)', 'rgba(0,212,255,0.22)');
-
         const { srcGeos, tgtGeos } = _getDotGeos();
         fillDots(visPts(tgtGeos), 'rgba(0,180,255,0.45)', 'rgba(0,180,255,0.8)');
         fillDots(visPts(srcGeos), 'rgba(255,51,85,0.5)',  'rgba(255,51,85,0.8)');
