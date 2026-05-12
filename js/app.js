@@ -448,7 +448,6 @@
     // Pre-populate heatmap + leaderboards immediately from real data
     AzimuthFeed.ingestBatch(valid);
     AzimuthMap.invalidateHeat();
-    AzimuthMap.refreshSVGDots();
 
     function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 

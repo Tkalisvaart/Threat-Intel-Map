@@ -32,8 +32,8 @@ window.AzimuthMap = (() => {
   let _heatOff     = null;
   let _heatOffCtx  = null;
   let _lastHeatTs  = 0;
-  let _dotCache    = null;
-  let _dotCacheTs  = 0;
+  let hotSrcs = new Map(); // country → expiry ms
+  let hotTgts = new Map(); // country → expiry ms
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -135,12 +135,6 @@ window.AzimuthMap = (() => {
     bPath.setAttribute('stroke-width', '0.35');
     svg.appendChild(bPath);
 
-    const srcSet = new Set(), tgtSet = new Set();
-    if (window.AzimuthFeed) window.AzimuthFeed.getAllEvents().forEach(e => {
-      if (e.src) srcSet.add(e.src);
-      if (e.tgt) tgtSet.add(e.tgt);
-    });
-
     Object.entries(GEO).forEach(([name, [lon, lat]]) => {
       const pt = proj([lon, lat]);
       if (!pt) return;
@@ -148,9 +142,7 @@ window.AzimuthMap = (() => {
       if (x < 4 || x > mapW - 4 || y < 4 || y > mapH - 4) return;
       const dot = document.createElementNS(NS, 'circle');
       dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '1.8');
-      if (!srcSet.has(name) && !tgtSet.has(name)) return;
-      const cls = srcSet.has(name) ? 'city-dot hot' : 'city-dot tgt';
-      dot.setAttribute('class', cls);
+      dot.setAttribute('class', 'city-dot');
       dot.setAttribute('data-country', name);
       svg.appendChild(dot);
     });
@@ -272,10 +264,33 @@ window.AzimuthMap = (() => {
       impacted: false,
     });
 
+    const TTL = 60000;
+    const now = Date.now();
+
+    hotSrcs.set(attack.src, now + TTL);
     const srcDot = document.querySelector(`.city-dot[data-country="${attack.src}"]`);
-    if (srcDot) srcDot.classList.add('hot');
+    if (srcDot) {
+      srcDot.classList.remove('tgt');
+      srcDot.classList.add('hot');
+      setTimeout(() => {
+        if (Date.now() >= (hotSrcs.get(attack.src) ?? 0)) {
+          hotSrcs.delete(attack.src);
+          srcDot.classList.remove('hot');
+        }
+      }, TTL);
+    }
+
+    hotTgts.set(attack.tgt, now + TTL);
     const tgtDot = document.querySelector(`.city-dot[data-country="${attack.tgt}"]`);
-    if (tgtDot && !tgtDot.classList.contains('hot')) tgtDot.classList.add('tgt');
+    if (tgtDot) {
+      if (!tgtDot.classList.contains('hot')) tgtDot.classList.add('tgt');
+      setTimeout(() => {
+        if (Date.now() >= (hotTgts.get(attack.tgt) ?? 0)) {
+          hotTgts.delete(attack.tgt);
+          if (!tgtDot.classList.contains('hot')) tgtDot.classList.remove('tgt');
+        }
+      }, TTL);
+    }
   }
 
   function addPulseRing(x, y, color) {
@@ -333,9 +348,19 @@ window.AzimuthMap = (() => {
         ctx.arc(mapW / 2, mapH / 2, sc - 0.5, 0, Math.PI * 2);
         ctx.clip();
 
-        // City dots — targets in blue, sources in red
-        function visPts(geos) {
-          return geos.filter(g => isGlobeVisible(g)).map(g => proj(g)).filter(Boolean);
+        // City dots — targets in blue, sources in red (expire after 60s)
+        const nowDot = Date.now();
+        for (const [k, exp] of hotSrcs) if (nowDot > exp) hotSrcs.delete(k);
+        for (const [k, exp] of hotTgts) if (nowDot > exp) hotTgts.delete(k);
+        function mapToVisPts(map) {
+          const pts = [];
+          map.forEach((_, name) => {
+            const geo = GEO[name];
+            if (!geo || !isGlobeVisible(geo)) return;
+            const pt = proj(geo);
+            if (pt) pts.push(pt);
+          });
+          return pts;
         }
         function fillDots(pts, fill, stroke) {
           if (!pts.length) return;
@@ -349,9 +374,8 @@ window.AzimuthMap = (() => {
           pts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
           ctx.stroke();
         }
-        const { srcGeos, tgtGeos } = _getDotGeos();
-        fillDots(visPts(tgtGeos), 'rgba(0,180,255,0.45)', 'rgba(0,180,255,0.8)');
-        fillDots(visPts(srcGeos), 'rgba(255,51,85,0.5)',  'rgba(255,51,85,0.8)');
+        fillDots(mapToVisPts(hotTgts), 'rgba(0,180,255,0.45)', 'rgba(0,180,255,0.8)');
+        fillDots(mapToVisPts(hotSrcs), 'rgba(255,51,85,0.5)',  'rgba(255,51,85,0.8)');
 
         if (showHeat) drawHeat();
         drawPulseRings();
@@ -444,37 +468,6 @@ window.AzimuthMap = (() => {
     ld.addColorStop(1,    'rgba(0,0,0,0.52)');
     bgCtx.fillStyle = ld;
     bgCtx.fill();
-  }
-
-  /* ── Source/target dot cache ────────────────────────────────── */
-  function _getDotGeos() {
-    const now = performance.now();
-    if (_dotCache && now - _dotCacheTs < 800) return _dotCache;
-    const srcSeen = new Map(), tgtSeen = new Map();
-    window.AzimuthFeed.getAllEvents().forEach(e => {
-      if (e.src) {
-        const geo = (e.lon && e.lat) ? [e.lon, e.lat] : GEO[e.src];
-        if (geo && !srcSeen.has(e.src)) srcSeen.set(e.src, geo);
-      }
-      if (e.tgt && GEO[e.tgt] && !tgtSeen.has(e.tgt)) tgtSeen.set(e.tgt, GEO[e.tgt]);
-    });
-    _dotCache   = { srcGeos: [...srcSeen.values()], tgtGeos: [...tgtSeen.values()] };
-    _dotCacheTs = now;
-    return _dotCache;
-  }
-
-  function refreshSVGDots() {
-    if (globeMode) return;
-    const srcSet = new Set(), tgtSet = new Set();
-    window.AzimuthFeed.getAllEvents().forEach(e => {
-      if (e.src) srcSet.add(e.src);
-      if (e.tgt) tgtSet.add(e.tgt);
-    });
-    document.querySelectorAll('.city-dot').forEach(d => {
-      const c = d.dataset.country;
-      d.classList.toggle('hot', srcSet.has(c));
-      d.classList.toggle('tgt', !srcSet.has(c) && tgtSet.has(c));
-    });
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
@@ -695,7 +688,7 @@ window.AzimuthMap = (() => {
   function setShowHeat(v) { showHeat = v; }
   function setPaused(v)   { paused   = v; }
   function clearArcs()    { arcs = []; particles = []; pulseRings = []; }
-  function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; _dotCache = null; _dotCacheTs = 0; }
+  function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; }
 
   function toggleGlobe() {
     globeMode  = !globeMode;
@@ -741,5 +734,5 @@ window.AzimuthMap = (() => {
   }
 
   return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs,
-           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat, refreshSVGDots };
+           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat };
 })();

@@ -341,8 +341,8 @@ html, body {
 }
 
 .city-dot {
-  fill: rgba(0,212,255,0.10);
-  stroke: rgba(0,212,255,0.22);
+  fill: none;
+  stroke: none;
   stroke-width: 0.5;
   pointer-events: none;
 }
