@@ -29,10 +29,11 @@ window.AzimuthMap = (() => {
   let rafId, lastFrame = 0;
   let worldData = null;
   let stars     = null;
-  let _heatOff    = null;
-  let _heatOffCtx = null;
-  let _lastHeatTs = 0;
-  let hotSrcs     = new Map(); // srcKey → { geo, exp }
+  let _heatOff     = null;
+  let _heatOffCtx  = null;
+  let _lastHeatTs  = 0;
+  let _srcDotCache = null;
+  let _srcDotTs    = 0;
 
   const MAX_ARCS = 50;
   const NS = 'http://www.w3.org/2000/svg';
@@ -134,6 +135,9 @@ window.AzimuthMap = (() => {
     bPath.setAttribute('stroke-width', '0.35');
     svg.appendChild(bPath);
 
+    const srcSet = new Set();
+    if (window.AzimuthFeed) window.AzimuthFeed.getAllEvents().forEach(e => { if (e.src) srcSet.add(e.src); });
+
     Object.entries(GEO).forEach(([name, [lon, lat]]) => {
       const pt = proj([lon, lat]);
       if (!pt) return;
@@ -141,7 +145,8 @@ window.AzimuthMap = (() => {
       if (x < 4 || x > mapW - 4 || y < 4 || y > mapH - 4) return;
       const dot = document.createElementNS(NS, 'circle');
       dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '1.8');
-      dot.setAttribute('class', 'city-dot'); dot.setAttribute('data-country', name);
+      dot.setAttribute('class', srcSet.has(name) ? 'city-dot hot' : 'city-dot');
+      dot.setAttribute('data-country', name);
       svg.appendChild(dot);
     });
   }
@@ -262,10 +267,8 @@ window.AzimuthMap = (() => {
       impacted: false,
     });
 
-    const srcKey = attack.src || `${attack.lon},${attack.lat}`;
-    hotSrcs.set(srcKey, { geo: srcGeo, exp: Date.now() + 2200 });
     const dot = document.querySelector(`.city-dot[data-country="${attack.src}"]`);
-    if (dot) { dot.classList.add('hot'); setTimeout(() => dot.classList.remove('hot'), 2200); }
+    if (dot) dot.classList.add('hot');
   }
 
   function addPulseRing(x, y, color) {
@@ -340,15 +343,11 @@ window.AzimuthMap = (() => {
         visPts.forEach(([x, y]) => { ctx.moveTo(x + 1.8, y); ctx.arc(x, y, 1.8, 0, Math.PI * 2); });
         ctx.stroke();
 
-        // Red dots for active attack sources
-        const nowTs = Date.now();
-        for (const [k, { exp }] of hotSrcs) { if (nowTs > exp) hotSrcs.delete(k); }
-        const hotPts = [];
-        hotSrcs.forEach(({ geo }) => {
-          if (!isGlobeVisible(geo)) return;
-          const pt = proj(geo);
-          if (pt) hotPts.push(pt);
-        });
+        // Red dots for all known attack sources
+        const hotPts = _getSrcGeos()
+          .filter(geo => isGlobeVisible(geo))
+          .map(geo => proj(geo))
+          .filter(Boolean);
         if (hotPts.length) {
           ctx.fillStyle = 'rgba(255, 51, 85, 0.5)';
           ctx.beginPath();
@@ -452,6 +451,31 @@ window.AzimuthMap = (() => {
     ld.addColorStop(1,    'rgba(0,0,0,0.52)');
     bgCtx.fillStyle = ld;
     bgCtx.fill();
+  }
+
+  /* ── Source dot cache ───────────────────────────────────────── */
+  function _getSrcGeos() {
+    const now = performance.now();
+    if (_srcDotCache && now - _srcDotTs < 800) return _srcDotCache;
+    const seen = new Map();
+    window.AzimuthFeed.getAllEvents().forEach(e => {
+      const geo = (e.lon && e.lat) ? [e.lon, e.lat] : GEO[e.src];
+      if (!geo) return;
+      const key = e.src || `${e.lon},${e.lat}`;
+      if (!seen.has(key)) seen.set(key, geo);
+    });
+    _srcDotCache = [...seen.values()];
+    _srcDotTs    = now;
+    return _srcDotCache;
+  }
+
+  function refreshSVGDots() {
+    if (globeMode) return;
+    const srcSet = new Set();
+    window.AzimuthFeed.getAllEvents().forEach(e => { if (e.src) srcSet.add(e.src); });
+    document.querySelectorAll('.city-dot').forEach(d => {
+      d.classList.toggle('hot', srcSet.has(d.dataset.country));
+    });
   }
 
   /* ── Heatmap (offscreen cache, blit to overlay) ──────────────── */
@@ -672,7 +696,7 @@ window.AzimuthMap = (() => {
   function setShowHeat(v) { showHeat = v; }
   function setPaused(v)   { paused   = v; }
   function clearArcs()    { arcs = []; particles = []; pulseRings = []; }
-  function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; }
+  function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; _srcDotCache = null; _srcDotTs = 0; }
 
   function toggleGlobe() {
     globeMode  = !globeMode;
@@ -718,5 +742,5 @@ window.AzimuthMap = (() => {
   }
 
   return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs,
-           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat };
+           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat, refreshSVGDots };
 })();
