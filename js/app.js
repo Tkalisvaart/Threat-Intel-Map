@@ -231,48 +231,33 @@
   const intelPopup = document.getElementById('intel-popup');
 
   function updateIntelPopup() {
-    const s = window.AZIMUTH_SOURCES;
-    const feeds = [
-      { key: 'feodo',           label: 'Feodo Tracker'   },
-      { key: 'openphish',       label: 'OpenPhish'        },
-      { key: 'blocklist',       label: 'Blocklist.de'     },
-      { key: 'emergingthreats', label: 'Emerging Threats' },
-      { key: 'cins',            label: 'CINS Score'       },
-      { key: 'abuseipdb',       label: 'AbuseIPDB'        },
-      { key: 'threatfox',       label: 'ThreatFox'        },
-      { key: 'urlhaus',         label: 'URLhaus'          },
-      { key: 'ipsum',           label: 'IPsum'            },
+    const s    = window.AZIMUTH_SOURCES;
+    const rows = [
+      { key: 'cf-l3', skey: 'cf_l3' },
+      { key: 'cf-l7', skey: 'cf_l7' },
     ];
 
-    if (!s) {
-      feeds.forEach(({ key }) => {
-        const el  = document.getElementById('ipc-' + key);
-        const row = document.getElementById('ipr-' + key);
-        if (el)  { el.textContent = '—'; el.className = 'ip-count inactive'; }
-        if (row) row.querySelector('.ip-dot').classList.remove('active');
-      });
-      const upd = document.getElementById('ipc-updated');
-      if (upd) upd.textContent = 'No live data available';
-      return;
-    }
-
-    feeds.forEach(({ key }) => {
-      const count = s[key] || 0;
-      const el    = document.getElementById('ipc-' + key);
-      const row   = document.getElementById('ipr-' + key);
-      const dot   = row && row.querySelector('.ip-dot');
+    rows.forEach(({ key, skey }) => {
+      const el  = document.getElementById('ipc-' + key);
+      const row = document.getElementById('ipr-' + key);
+      const dot = row && row.querySelector('.ip-dot');
+      const count = s ? (s[skey] || 0) : 0;
       if (el) {
-        el.textContent = count > 0 ? count.toLocaleString() + ' events' : 'inactive';
-        el.className   = 'ip-count' + (count === 0 ? ' inactive' : '');
+        el.textContent = s ? (count > 0 ? count.toLocaleString() + ' events' : 'inactive') : '—';
+        el.className   = 'ip-count' + (!s || count === 0 ? ' inactive' : '');
       }
-      if (dot) dot.classList.toggle('active', count > 0);
+      if (dot) dot.classList.toggle('active', !!s && count > 0);
     });
 
     const upd = document.getElementById('ipc-updated');
-    if (upd && s.updatedAt) {
-      const d  = new Date(s.updatedAt);
-      const hm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`;
-      upd.textContent = 'Data refreshed: ' + hm;
+    if (upd) {
+      if (s && s.updatedAt) {
+        const d  = new Date(s.updatedAt);
+        const hm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`;
+        upd.textContent = 'Data refreshed: ' + hm;
+      } else {
+        upd.textContent = s ? '' : 'No live data available';
+      }
     }
   }
 
@@ -445,7 +430,6 @@
 
     window.AZIMUTH_TOTAL_COUNT = valid.length;
 
-    // Pre-populate heatmap + leaderboards immediately from real data
     AzimuthFeed.ingestBatch(valid);
 
     function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
@@ -453,55 +437,25 @@
     set('ts-total', valid.length.toLocaleString());
 
     const srcCountries = new Set(valid.map(e => e.src));
+    const tgtCountries = new Set(valid.map(e => e.tgt).filter(Boolean));
     set('ts-countries', srcCountries.size);
+    set('r-unique',     srcCountries.size.toLocaleString());
+    set('r-highconf',   tgtCountries.size.toLocaleString());
+    set('r-feeds',      'CF Radar');
+    set('r-events',     valid.length.toLocaleString());
 
-    const uniqueIPSet = new Set(valid.filter(e => e.ip).map(e => e.ip));
-    set('r-unique', uniqueIPSet.size.toLocaleString());
-
-    // High-confidence indicators (AbuseIPDB confidence >= 90)
-    const highConf = valid.filter(e => (e.confidence || 0) >= 90).length;
-    set('r-highconf', highConf.toLocaleString());
-
-    // Intel source breakdown — prefer explicit source field, fall back to family-based detection
-    const blocklistFamilies = new Set([
-      'SSH Brute Force','Web Exploit','Botnet','Brute Force','Mail Spam',
-      'IMAP Brute Force','FTP Brute Force','Persistent Attacker','VoIP Scan',
-    ]);
-    const esrc = e => e.source;
-    const feedCounts = {
-      feodo:          valid.filter(e => esrc(e) === 'feodo'          || (!esrc(e) && e.type === 'c2' && (e.family || '') !== 'AbuseIPDB')).length,
-      openphish:      valid.filter(e => esrc(e) === 'openphish'      || (!esrc(e) && e.family === 'Phishing Site')).length,
-      blocklist:      valid.filter(e => esrc(e) === 'blocklist'       || (!esrc(e) && blocklistFamilies.has(e.family || ''))).length,
-      emergingthreats:valid.filter(e => esrc(e) === 'emergingthreats'|| (!esrc(e) && e.family === 'Compromised Host')).length,
-      cins:           valid.filter(e => esrc(e) === 'cins'           || (!esrc(e) && e.family === 'CINS Score')).length,
-      abuseipdb:      valid.filter(e => esrc(e) === 'abuseipdb'      || (!esrc(e) && (e.family || '') === 'AbuseIPDB')).length,
-      ipsum:          valid.filter(e => esrc(e) === 'ipsum'           || (!esrc(e) && e.family === 'IPsum')).length,
-    };
-    const urlhausCount  = valid.filter(e => esrc(e) === 'urlhaus'   || (!esrc(e) && e.active !== undefined)).length;
-    const threatfoxCount = valid.filter(e => esrc(e) === 'threatfox' || (!esrc(e) && (e.port || 0) > 0 && e.active === undefined && (e.family || '') !== 'AbuseIPDB')).length;
-    const activeFeeds = Object.values(feedCounts).filter(v => v > 0).length
-      + (threatfoxCount > 0 ? 1 : 0)
-      + (urlhausCount > 0 ? 1 : 0);
-    set('r-feeds', `${activeFeeds}/9`);
-
-    // Total documented attack events from AbuseIPDB report counts
-    const atkEvents = valid.reduce((sum, e) => sum + (e.total_reports || 0), 0);
-    set('r-events', atkEvents > 0 ? atkEvents.toLocaleString() : '—');
-
-    // Global threat level — based on C2/exploit ratio (highest-risk types)
     const sevEl = document.getElementById('ts-severity');
     if (sevEl) {
-      const c2exploit = valid.filter(e => e.type === 'c2' || e.type === 'exploit').length;
-      const ratio = c2exploit / (valid.length || 1);
-      const level = ratio > 0.4 ? 'CRITICAL' : ratio > 0.2 ? 'HIGH' : 'ELEVATED';
+      const exploit = valid.filter(e => e.type === 'exploit').length;
+      const ratio   = exploit / (valid.length || 1);
+      const level   = ratio > 0.4 ? 'CRITICAL' : ratio > 0.2 ? 'HIGH' : 'ELEVATED';
       sevEl.textContent = level;
       sevEl.className   = 'top-stat-val ' + (level === 'CRITICAL' ? 'red' : level === 'HIGH' ? 'amber' : 'green');
     }
 
     window.AZIMUTH_SOURCES = {
-      ...feedCounts,
-      threatfox: threatfoxCount,
-      urlhaus:   urlhausCount,
+      cf_l3:     valid.filter(e => e.type === 'ddos').length,
+      cf_l7:     valid.filter(e => e.type === 'exploit').length,
       updatedAt: _dataLastModified,
     };
   }

@@ -68,60 +68,18 @@
         <span class="top-stat-val" id="ts-source">—</span>
         <span class="top-stat-lbl">Intel Source ↓</span>
         <div id="intel-popup">
-          <div class="ip-title">Intel Sources</div>
-          <div class="ip-row" id="ipr-feodo">
+          <div class="ip-title">Cloudflare Radar</div>
+          <div class="ip-row" id="ipr-cf-l3">
             <span class="ip-dot"></span>
-            <span class="ip-name">Feodo Tracker</span>
-            <span class="ip-tag">C2</span>
-            <span class="ip-count inactive" id="ipc-feodo">—</span>
+            <span class="ip-name">Layer 3 / Network</span>
+            <span class="ip-tag">DDoS</span>
+            <span class="ip-count inactive" id="ipc-cf-l3">—</span>
           </div>
-          <div class="ip-row" id="ipr-openphish">
+          <div class="ip-row" id="ipr-cf-l7">
             <span class="ip-dot"></span>
-            <span class="ip-name">OpenPhish</span>
-            <span class="ip-tag">Phishing</span>
-            <span class="ip-count inactive" id="ipc-openphish">—</span>
-          </div>
-          <div class="ip-row" id="ipr-blocklist">
-            <span class="ip-dot"></span>
-            <span class="ip-name">Blocklist.de</span>
-            <span class="ip-tag">Multi</span>
-            <span class="ip-count inactive" id="ipc-blocklist">—</span>
-          </div>
-          <div class="ip-row" id="ipr-emergingthreats">
-            <span class="ip-dot"></span>
-            <span class="ip-name">Emerging Threats</span>
-            <span class="ip-tag">Malware</span>
-            <span class="ip-count inactive" id="ipc-emergingthreats">—</span>
-          </div>
-          <div class="ip-row" id="ipr-abuseipdb">
-            <span class="ip-dot"></span>
-            <span class="ip-name">AbuseIPDB</span>
-            <span class="ip-tag">Multi</span>
-            <span class="ip-count inactive" id="ipc-abuseipdb">—</span>
-          </div>
-          <div class="ip-row" id="ipr-threatfox">
-            <span class="ip-dot"></span>
-            <span class="ip-name">ThreatFox</span>
-            <span class="ip-tag">C2/IOC</span>
-            <span class="ip-count inactive" id="ipc-threatfox">—</span>
-          </div>
-          <div class="ip-row" id="ipr-urlhaus">
-            <span class="ip-dot"></span>
-            <span class="ip-name">URLhaus</span>
-            <span class="ip-tag">Malware</span>
-            <span class="ip-count inactive" id="ipc-urlhaus">—</span>
-          </div>
-          <div class="ip-row" id="ipr-cins">
-            <span class="ip-dot"></span>
-            <span class="ip-name">CINS Score</span>
-            <span class="ip-tag">Recon</span>
-            <span class="ip-count inactive" id="ipc-cins">—</span>
-          </div>
-          <div class="ip-row" id="ipr-ipsum">
-            <span class="ip-dot"></span>
-            <span class="ip-name">IPsum</span>
-            <span class="ip-tag">Multi</span>
-            <span class="ip-count inactive" id="ipc-ipsum">—</span>
+            <span class="ip-name">Layer 7 / HTTP</span>
+            <span class="ip-tag">Exploit</span>
+            <span class="ip-count inactive" id="ipc-cf-l7">—</span>
           </div>
           <div class="ip-updated" id="ipc-updated"></div>
         </div>
@@ -242,19 +200,19 @@
       <div id="stats-grid">
         <div class="stat-cell">
           <div class="stat-num purple" id="r-unique">0</div>
-          <div class="stat-lbl">Unique IPs</div>
+          <div class="stat-lbl">Src Countries</div>
         </div>
         <div class="stat-cell alt">
           <div class="stat-num green" id="r-highconf">0</div>
-          <div class="stat-lbl">High Conf</div>
+          <div class="stat-lbl">Tgt Countries</div>
         </div>
         <div class="stat-cell">
           <div class="stat-num amber" id="r-feeds">—</div>
-          <div class="stat-lbl">Active Feeds</div>
+          <div class="stat-lbl">Data Source</div>
         </div>
         <div class="stat-cell alt">
           <div class="stat-num red" id="r-events">—</div>
-          <div class="stat-lbl">Atk Events</div>
+          <div class="stat-lbl">Total Events</div>
         </div>
       </div>
 

@@ -759,6 +759,7 @@ html, body { width: 100%; }
   transition: color 0.12s;
 }
 .fi-ip-link:hover { color: var(--accent); text-decoration: underline; }
+.fi-ip-agg { color: var(--text3); font-style: italic; cursor: default; }
 .fi-family {
   font-size: 10px;
   color: var(--text3);

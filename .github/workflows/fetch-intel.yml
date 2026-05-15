@@ -14,53 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Python dependencies
-        run: pip install geoip2
-
-      - name: Get cache-key week
-        id: week
-        run: echo "val=$(date +%Y-%V)" >> $GITHUB_OUTPUT
-
-      - name: Cache MaxMind databases
-        id: cache-maxmind
-        uses: actions/cache@v4
-        with:
-          path: |
-            GeoLite2-City.mmdb
-            GeoLite2-ASN.mmdb
-          key: maxmind-${{ secrets.MAXMIND_ACCOUNT_ID }}-${{ steps.week.outputs.val }}
-
-      - name: Download MaxMind GeoLite2 databases
-        if: steps.cache-maxmind.outputs.cache-hit != 'true'
-        env:
-          MAXMIND_ACCOUNT_ID: ${{ secrets.MAXMIND_ACCOUNT_ID }}
-          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
-        run: |
-          if [ -z "$MAXMIND_ACCOUNT_ID" ] || [ -z "$MAXMIND_LICENSE_KEY" ]; then
-            echo "Skipping MaxMind (secrets not set) — will use ip-api.com fallback"
-            exit 0
-          fi
-          for DB in GeoLite2-City GeoLite2-ASN; do
-            TMPFILE=$(mktemp)
-            HTTP_CODE=$(curl -sS -L -w "%{http_code}" -o "$TMPFILE" \
-              -u "${MAXMIND_ACCOUNT_ID}:${MAXMIND_LICENSE_KEY}" \
-              "https://download.maxmind.com/geoip/databases/${DB}/download?suffix=tar.gz")
-            if [ "$HTTP_CODE" != "200" ]; then
-              echo "MaxMind download failed for ${DB}: HTTP ${HTTP_CODE} — will use ip-api.com fallback"
-              rm -f "$TMPFILE"
-              exit 0
-            fi
-            DIR=$(mktemp -d)
-            tar -xz -C "$DIR" < "$TMPFILE"
-            find "$DIR" -name "*.mmdb" -exec cp {} . \;
-            rm -rf "$DIR" "$TMPFILE"
-            echo "${DB}.mmdb ready"
-          done
-
       - name: Fetch IOCs
         env:
-          ABUSEIPDB_KEY: ${{ secrets.ABUSEIPDB_KEY }}
-          THREATFOX_KEY: ${{ secrets.THREATFOX_KEY }}
+          CF_TOKEN: ${{ secrets.CF_TOKEN }}
         run: python3 scripts/fetch_iocs.py
 
       - name: Commit updated data
@@ -69,6 +25,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git reset --soft origin/main
-          git add data/iocs.json data/fetch_meta.json
+          git add data/iocs.json
           git diff --staged --quiet || git commit -m "chore: refresh threat intel data"
           git push

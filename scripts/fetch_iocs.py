@@ -1,201 +1,20 @@
 #!/usr/bin/env python3
 """
-Fetch threat intel from abuse.ch and write data/iocs.json.
-Run by GitHub Actions on a schedule — no CORS restrictions server-side.
+Fetch attack data from Cloudflare Radar API and write data/iocs.json.
+Run by GitHub Actions on a schedule.
 """
-import concurrent.futures
-import ipaddress
 import json
 import os
 import random
-import socket
-import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 _ROOT      = Path(__file__).parent.parent
-_META_FILE = _ROOT / 'data' / 'fetch_meta.json'
 _IOCS_FILE = _ROOT / 'data' / 'iocs.json'
-# AbuseIPDB free tier allows only 5 blacklist requests/day — enforce a 23-hour cooldown.
-_ABUSEIPDB_COOLDOWN = 23 * 3600
-# CINS Score: be polite — refresh at most every 6 hours.
-_CINS_COOLDOWN = 6 * 3600
 
-
-def _load_dotenv():
-    """Load .env from the project root into os.environ (skipped if running in CI)."""
-    env_file = _ROOT / '.env'
-    if not env_file.exists():
-        return
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, _, val = line.partition('=')
-        os.environ.setdefault(key.strip(), val.strip())
-
-_load_dotenv()
-
-
-def _load_meta():
-    try:
-        return json.loads(_META_FILE.read_text())
-    except Exception:
-        return {}
-
-
-def _save_meta(meta):
-    _META_FILE.parent.mkdir(exist_ok=True)
-    _META_FILE.write_text(json.dumps(meta, indent=2))
-
-
-def _abuseipdb_ready(meta):
-    last = meta.get('abuseipdb_last_fetch', 0)
-    elapsed = time.time() - last
-    if elapsed < _ABUSEIPDB_COOLDOWN:
-        remaining_h = (_ABUSEIPDB_COOLDOWN - elapsed) / 3600
-        print(f'  API cooldown active ({elapsed/3600:.1f}h since last call, {remaining_h:.1f}h remaining) — using GitHub data')
-        return False
-    return True
-
-
-def _cached_abuseipdb_events():
-    """Return existing AbuseIPDB events already in iocs.json."""
-    try:
-        existing = json.loads(_IOCS_FILE.read_text())
-        cached = [e for e in existing if e.get('family') == 'AbuseIPDB' or e.get('source') == 'abuseipdb']
-        for e in cached:
-            e.setdefault('source', 'abuseipdb')
-        print(f'  Reusing {len(cached)} cached AbuseIPDB events from iocs.json')
-        return cached
-    except Exception:
-        return []
-
-
-def _github_raw_iocs_url():
-    """Derive the raw GitHub URL and auth token from git remote origin.
-    Returns (url, token) — token may be None for public repos.
-    """
-    try:
-        import subprocess
-        result = subprocess.run(
-            ['git', 'remote', 'get-url', 'origin'],
-            capture_output=True, text=True,
-            cwd=str(_ROOT),
-        )
-        remote = result.stdout.strip()
-        token = None
-        if remote.startswith('https://') and '@github.com' in remote:
-            # https://user:TOKEN@github.com/OWNER/REPO.git
-            creds = remote.split('https://', 1)[1].split('@github.com', 1)[0]
-            if ':' in creds:
-                token = creds.split(':', 1)[1]
-            remote = 'https://github.com/' + remote.split('@github.com/', 1)[1]
-        elif '@github.com:' in remote:
-            # SSH: git@github.com:OWNER/REPO.git
-            remote = 'https://github.com/' + remote.split('@github.com:', 1)[1]
-        raw = remote.replace('https://github.com/', 'https://raw.githubusercontent.com/')
-        raw = raw.removesuffix('.git')
-        return raw + '/main/data/iocs.json', token
-    except Exception:
-        return None, None
-
-
-def _github_abuseipdb_events():
-    """Fetch AbuseIPDB events from the GitHub-hosted iocs.json (kept fresh by CI)."""
-    url, token = _github_raw_iocs_url()
-    if not url:
-        raise RuntimeError('Could not determine GitHub raw URL from git remote')
-    headers = {'User-Agent': 'azimuth-threat-map/1.0'}
-    if token:
-        headers['Authorization'] = f'token {token}'
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.loads(r.read())
-    events = [e for e in data if e.get('source') == 'abuseipdb' or e.get('family') == 'AbuseIPDB']
-    for e in events:
-        e.setdefault('source', 'abuseipdb')
-    print(f'  Fetched {len(events)} AbuseIPDB events from GitHub iocs.json')
-    return events
-
-
-def _cins_ready(meta):
-    last = meta.get('cins_last_fetch', 0)
-    elapsed = time.time() - last
-    if elapsed < _CINS_COOLDOWN:
-        remaining_h = (_CINS_COOLDOWN - elapsed) / 3600
-        print(f'  Skipping CINS Score — fetched {elapsed/3600:.1f}h ago, cooldown {remaining_h:.1f}h remaining')
-        return False
-    return True
-
-
-def _cached_cins_events():
-    try:
-        existing = json.loads(_IOCS_FILE.read_text())
-        cached = [e for e in existing if e.get('family') == 'CINS Score' or e.get('source') == 'cins']
-        for e in cached:
-            e.setdefault('source', 'cins')
-        print(f'  Reusing {len(cached)} cached CINS Score events from iocs.json')
-        return cached
-    except Exception:
-        return []
-
-# Load MaxMind GeoLite2 databases if available (downloaded by CI before this script runs).
-# Falls back to ip-api.com batch API when databases are absent.
-_DB_DIR = Path(__file__).parent.parent
-try:
-    import geoip2.database
-    import geoip2.errors
-    _city_reader = geoip2.database.Reader(str(_DB_DIR / 'GeoLite2-City.mmdb'))
-    _asn_reader  = geoip2.database.Reader(str(_DB_DIR / 'GeoLite2-ASN.mmdb'))
-    _USE_MAXMIND = True
-    print('GeoLite2 databases loaded — using MaxMind for geolocation')
-except Exception:
-    _city_reader = None
-    _asn_reader  = None
-    _USE_MAXMIND = False
-    print('MaxMind databases not found — falling back to ip-api.com')
-
-# Must match GEO keys in js/data.js
-KNOWN_COUNTRIES = {
-    'China', 'United States', 'Russia', 'Brazil', 'India', 'Germany',
-    'Netherlands', 'France', 'United Kingdom', 'South Korea', 'Japan',
-    'Ukraine', 'Vietnam', 'Iran', 'Turkey', 'Indonesia', 'Mexico',
-    'Pakistan', 'Nigeria', 'South Africa', 'Australia', 'Canada',
-    'Argentina', 'Egypt', 'Romania', 'Bulgaria', 'Poland',
-    'North Korea', 'Belarus', 'Israel', 'Hong Kong', 'Singapore',
-    'Taiwan', 'Thailand', 'Malaysia', 'Philippines', 'Czech Republic',
-    'Hungary', 'Serbia', 'Moldova', 'Kazakhstan', 'Lithuania',
-    'Latvia', 'Estonia', 'Finland', 'Sweden', 'Norway', 'Denmark',
-    'Spain', 'Portugal', 'Italy', 'Greece', 'Switzerland', 'Austria',
-    'Belgium', 'Chile', 'Colombia', 'Peru', 'Venezuela', 'Saudi Arabia',
-    'UAE', 'Morocco', 'Algeria', 'Bangladesh', 'Sri Lanka', 'Myanmar',
-    'Nepal', 'Slovakia', 'Croatia', 'Azerbaijan', 'Georgia', 'Armenia',
-    'Uzbekistan',
-    # Africa
-    'Kenya', 'Tanzania', 'Ethiopia', 'Ghana', 'Ivory Coast', 'Cameroon',
-    'Angola', 'Mozambique', 'Zimbabwe', 'Zambia', 'Uganda', 'Rwanda',
-    'Sudan', 'DR Congo', 'Senegal', 'Libya', 'Tunisia', 'Somalia',
-    'Namibia', 'Botswana', 'Madagascar', 'Mali', 'Malawi', 'Burkina Faso',
-    'Niger', 'Togo', 'Benin', 'Guinea', 'Mauritius',
-    # Middle East
-    'Iraq', 'Syria', 'Jordan', 'Kuwait', 'Qatar', 'Bahrain',
-    'Oman', 'Lebanon', 'Yemen', 'Palestine',
-    # Central & South Asia
-    'Afghanistan', 'Kyrgyzstan', 'Tajikistan', 'Turkmenistan',
-    # East & Southeast Asia
-    'Cambodia', 'Laos', 'Mongolia',
-    # Europe
-    'Albania', 'Bosnia', 'North Macedonia', 'Montenegro', 'Iceland',
-    'Luxembourg', 'Malta', 'Cyprus', 'Ireland', 'Slovenia',
-    # Americas
-    'Bolivia', 'Ecuador', 'Paraguay', 'Uruguay', 'Cuba',
-    'Dominican Republic', 'Honduras', 'Guatemala', 'El Salvador',
-    'Costa Rica', 'Panama', 'Nicaragua', 'Guyana',
-    'Trinidad and Tobago', 'Jamaica', 'Haiti',
-    # Oceania
-    'New Zealand', 'Papua New Guinea', 'Fiji',
-}
+CF_TOKEN = os.environ.get('CF_TOKEN', '')
+CF_BASE  = 'https://api.cloudflare.com/client/v4/radar'
 
 ISO_TO_COUNTRY = {
     'CN': 'China',          'US': 'United States', 'RU': 'Russia',
@@ -222,909 +41,288 @@ ISO_TO_COUNTRY = {
     'BD': 'Bangladesh',     'LK': 'Sri Lanka',     'MM': 'Myanmar',
     'NP': 'Nepal',          'SK': 'Slovakia',      'HR': 'Croatia',
     'AZ': 'Azerbaijan',     'GE': 'Georgia',       'AM': 'Armenia',
-    'UZ': 'Uzbekistan',
-    # Africa
-    'KE': 'Kenya',          'TZ': 'Tanzania',      'ET': 'Ethiopia',
-    'GH': 'Ghana',          'CI': 'Ivory Coast',   'CM': 'Cameroon',
-    'AO': 'Angola',         'MZ': 'Mozambique',    'ZW': 'Zimbabwe',
-    'ZM': 'Zambia',         'UG': 'Uganda',        'RW': 'Rwanda',
-    'SD': 'Sudan',          'CD': 'DR Congo',      'SN': 'Senegal',
-    'LY': 'Libya',          'TN': 'Tunisia',       'SO': 'Somalia',
-    'NA': 'Namibia',        'BW': 'Botswana',      'MG': 'Madagascar',
-    'ML': 'Mali',           'MW': 'Malawi',        'BF': 'Burkina Faso',
-    'NE': 'Niger',          'TG': 'Togo',          'BJ': 'Benin',
-    'GN': 'Guinea',         'MU': 'Mauritius',
-    # Middle East
+    'UZ': 'Uzbekistan',     'KE': 'Kenya',         'TZ': 'Tanzania',
+    'ET': 'Ethiopia',       'GH': 'Ghana',         'CI': 'Ivory Coast',
+    'CM': 'Cameroon',       'AO': 'Angola',        'MZ': 'Mozambique',
+    'ZW': 'Zimbabwe',       'ZM': 'Zambia',        'UG': 'Uganda',
+    'RW': 'Rwanda',         'SD': 'Sudan',         'CD': 'DR Congo',
+    'SN': 'Senegal',        'LY': 'Libya',         'TN': 'Tunisia',
+    'SO': 'Somalia',        'NA': 'Namibia',       'BW': 'Botswana',
+    'MG': 'Madagascar',     'ML': 'Mali',          'MW': 'Malawi',
+    'BF': 'Burkina Faso',   'NE': 'Niger',         'TG': 'Togo',
+    'BJ': 'Benin',          'GN': 'Guinea',        'MU': 'Mauritius',
     'IQ': 'Iraq',           'SY': 'Syria',         'JO': 'Jordan',
     'KW': 'Kuwait',         'QA': 'Qatar',         'BH': 'Bahrain',
     'OM': 'Oman',           'LB': 'Lebanon',       'YE': 'Yemen',
-    'PS': 'Palestine',
-    # Central & South Asia
-    'AF': 'Afghanistan',    'KG': 'Kyrgyzstan',    'TJ': 'Tajikistan',
-    'TM': 'Turkmenistan',
-    # East & Southeast Asia
-    'KH': 'Cambodia',       'LA': 'Laos',          'MN': 'Mongolia',
-    # Europe
-    'AL': 'Albania',        'BA': 'Bosnia',        'MK': 'North Macedonia',
-    'ME': 'Montenegro',     'IS': 'Iceland',       'LU': 'Luxembourg',
-    'MT': 'Malta',          'CY': 'Cyprus',        'IE': 'Ireland',
-    'SI': 'Slovenia',
-    # Americas
+    'PS': 'Palestine',      'AF': 'Afghanistan',   'KG': 'Kyrgyzstan',
+    'TJ': 'Tajikistan',     'TM': 'Turkmenistan',  'KH': 'Cambodia',
+    'LA': 'Laos',           'MN': 'Mongolia',      'AL': 'Albania',
+    'BA': 'Bosnia',         'MK': 'North Macedonia','ME': 'Montenegro',
+    'IS': 'Iceland',        'LU': 'Luxembourg',    'MT': 'Malta',
+    'CY': 'Cyprus',         'IE': 'Ireland',       'SI': 'Slovenia',
     'BO': 'Bolivia',        'EC': 'Ecuador',       'PY': 'Paraguay',
     'UY': 'Uruguay',        'CU': 'Cuba',          'DO': 'Dominican Republic',
     'HN': 'Honduras',       'GT': 'Guatemala',     'SV': 'El Salvador',
     'CR': 'Costa Rica',     'PA': 'Panama',        'NI': 'Nicaragua',
     'GY': 'Guyana',         'TT': 'Trinidad and Tobago', 'JM': 'Jamaica',
-    'HT': 'Haiti',
-    # Oceania
-    'NZ': 'New Zealand',    'PG': 'Papua New Guinea', 'FJ': 'Fiji',
+    'HT': 'Haiti',          'NZ': 'New Zealand',   'PG': 'Papua New Guinea',
+    'FJ': 'Fiji',
 }
 
-TARGETS = {
-    'malware':  ['United States', 'Germany', 'United Kingdom', 'Australia', 'Canada', 'France', 'Japan', 'Netherlands'],
-    'phishing': ['United States', 'United Kingdom', 'Germany', 'France', 'Australia', 'Canada', 'Japan'],
-    'c2':       ['United States', 'Germany', 'Japan', 'United Kingdom', 'France', 'Netherlands', 'Australia'],
-    'exploit':  ['United States', 'Germany', 'France', 'Japan', 'South Korea', 'Australia', 'Canada'],
-    'recon':    ['United States', 'Germany', 'Japan', 'United Kingdom', 'Australia', 'France', 'Netherlands'],
-    'ddos':     ['United States', 'Germany', 'France', 'South Korea', 'Japan', 'Netherlands', 'United Kingdom'],
+CENTROIDS = {
+    'China':               ( 35.86,  104.19),
+    'United States':       ( 37.09,  -95.71),
+    'Russia':              ( 61.52,  105.31),
+    'Brazil':              (-14.24,  -51.93),
+    'India':               ( 20.59,   78.96),
+    'Germany':             ( 51.16,   10.45),
+    'Netherlands':         ( 52.13,    5.29),
+    'France':              ( 46.23,    2.21),
+    'United Kingdom':      ( 55.38,   -3.44),
+    'South Korea':         ( 35.91,  127.77),
+    'Japan':               ( 36.20,  138.25),
+    'Ukraine':             ( 48.38,   31.17),
+    'Vietnam':             ( 14.06,  108.28),
+    'Iran':                ( 32.43,   53.69),
+    'Turkey':              ( 38.96,   35.24),
+    'Indonesia':           ( -0.79,  113.92),
+    'Mexico':              ( 23.63, -102.55),
+    'Pakistan':            ( 30.38,   69.35),
+    'Nigeria':             (  9.08,    8.68),
+    'South Africa':        (-30.56,   22.94),
+    'Australia':           (-25.27,  133.78),
+    'Canada':              ( 56.13, -106.35),
+    'Argentina':           (-38.42,  -63.62),
+    'Egypt':               ( 26.82,   30.80),
+    'Romania':             ( 45.94,   24.97),
+    'Bulgaria':            ( 42.73,   25.49),
+    'Poland':              ( 51.92,   19.14),
+    'North Korea':         ( 40.34,  127.51),
+    'Belarus':             ( 53.71,   27.95),
+    'Israel':              ( 31.05,   34.85),
+    'Hong Kong':           ( 22.40,  114.11),
+    'Singapore':           (  1.35,  103.82),
+    'Taiwan':              ( 23.70,  120.96),
+    'Thailand':            ( 15.87,  100.99),
+    'Malaysia':            (  4.21,  101.98),
+    'Philippines':         ( 12.88,  121.77),
+    'Czech Republic':      ( 49.82,   15.47),
+    'Hungary':             ( 47.16,   19.50),
+    'Serbia':              ( 44.02,   21.01),
+    'Moldova':             ( 47.41,   28.37),
+    'Kazakhstan':          ( 48.02,   66.92),
+    'Lithuania':           ( 55.17,   23.88),
+    'Latvia':              ( 56.88,   24.60),
+    'Estonia':             ( 58.60,   25.01),
+    'Finland':             ( 61.92,   25.75),
+    'Sweden':              ( 60.13,   18.64),
+    'Norway':              ( 60.47,    8.47),
+    'Denmark':             ( 56.26,    9.50),
+    'Spain':               ( 40.46,   -3.75),
+    'Portugal':            ( 39.40,   -8.22),
+    'Italy':               ( 41.87,   12.57),
+    'Greece':              ( 39.07,   21.82),
+    'Switzerland':         ( 46.82,    8.23),
+    'Austria':             ( 47.52,   14.55),
+    'Belgium':             ( 50.50,    4.47),
+    'Chile':               (-35.68,  -71.54),
+    'Colombia':            (  4.57,  -74.30),
+    'Peru':                ( -9.19,  -75.02),
+    'Venezuela':           (  6.42,  -66.59),
+    'Saudi Arabia':        ( 23.89,   45.08),
+    'UAE':                 ( 23.42,   53.85),
+    'Morocco':             ( 31.79,   -7.09),
+    'Algeria':             ( 28.03,    1.66),
+    'Bangladesh':          ( 23.68,   90.36),
+    'Sri Lanka':           (  7.87,   80.77),
+    'Myanmar':             ( 21.91,   95.96),
+    'Nepal':               ( 28.39,   84.12),
+    'Slovakia':            ( 48.67,   19.70),
+    'Croatia':             ( 45.10,   15.20),
+    'Azerbaijan':          ( 40.14,   47.58),
+    'Georgia':             ( 42.32,   43.36),
+    'Armenia':             ( 40.07,   45.04),
+    'Uzbekistan':          ( 41.38,   64.59),
+    'Kenya':               ( -0.02,   37.91),
+    'Tanzania':            ( -6.37,   34.89),
+    'Ethiopia':            (  9.15,   40.49),
+    'Ghana':               (  7.95,   -1.02),
+    'Ivory Coast':         (  7.54,   -5.55),
+    'Cameroon':            (  7.37,   12.35),
+    'Angola':              (-11.20,   17.87),
+    'Mozambique':          (-18.67,   35.53),
+    'Zimbabwe':            (-19.02,   29.15),
+    'Zambia':              (-13.13,   27.85),
+    'Uganda':              (  1.37,   32.29),
+    'Rwanda':              ( -1.94,   29.87),
+    'Sudan':               ( 12.86,   30.22),
+    'DR Congo':            ( -4.04,   21.76),
+    'Senegal':             ( 14.50,  -14.45),
+    'Libya':               ( 26.34,   17.23),
+    'Tunisia':             ( 33.89,    9.54),
+    'Somalia':             (  5.15,   46.20),
+    'Namibia':             (-22.96,   18.49),
+    'Botswana':            (-22.33,   24.68),
+    'Madagascar':          (-18.77,   46.87),
+    'Mali':                ( 17.57,   -3.99),
+    'Malawi':              (-13.25,   34.30),
+    'Burkina Faso':        ( 12.36,   -1.56),
+    'Niger':               ( 17.61,    8.08),
+    'Togo':                (  8.62,    0.82),
+    'Benin':               (  9.31,    2.32),
+    'Guinea':              ( 11.75,  -15.74),
+    'Mauritius':           (-20.35,   57.55),
+    'Iraq':                ( 33.22,   43.68),
+    'Syria':               ( 34.80,   38.99),
+    'Jordan':              ( 30.59,   36.24),
+    'Kuwait':              ( 29.31,   47.48),
+    'Qatar':               ( 25.35,   51.18),
+    'Bahrain':             ( 26.00,   50.56),
+    'Oman':                ( 21.47,   55.98),
+    'Lebanon':             ( 33.85,   35.86),
+    'Yemen':               ( 15.55,   48.52),
+    'Palestine':           ( 31.95,   35.23),
+    'Afghanistan':         ( 33.93,   67.71),
+    'Kyrgyzstan':          ( 41.20,   74.77),
+    'Tajikistan':          ( 38.86,   71.28),
+    'Turkmenistan':        ( 38.97,   59.56),
+    'Cambodia':            ( 12.57,  104.99),
+    'Laos':                ( 19.86,  102.50),
+    'Mongolia':            ( 46.86,  103.85),
+    'Albania':             ( 41.15,   20.17),
+    'Bosnia':              ( 43.92,   17.68),
+    'North Macedonia':     ( 41.61,   21.75),
+    'Montenegro':          ( 42.71,   19.37),
+    'Iceland':             ( 64.96,  -19.02),
+    'Luxembourg':          ( 49.82,    6.13),
+    'Malta':               ( 35.94,   14.37),
+    'Cyprus':              ( 35.13,   33.43),
+    'Ireland':             ( 53.41,   -8.24),
+    'Slovenia':            ( 46.15,   14.99),
+    'Bolivia':             (-16.29,  -63.59),
+    'Ecuador':             ( -1.83,  -78.18),
+    'Paraguay':            (-23.44,  -58.44),
+    'Uruguay':             (-32.52,  -55.77),
+    'Cuba':                ( 21.52,  -77.78),
+    'Dominican Republic':  ( 18.74,  -70.16),
+    'Honduras':            ( 15.20,  -86.24),
+    'Guatemala':           ( 15.78,  -90.23),
+    'El Salvador':         ( 13.79,  -88.90),
+    'Costa Rica':          (  9.75,  -83.75),
+    'Panama':              (  8.54,  -80.78),
+    'Nicaragua':           ( 12.87,  -85.21),
+    'Guyana':              (  4.86,  -58.93),
+    'Trinidad and Tobago': ( 10.69,  -61.22),
+    'Jamaica':             ( 18.11,  -77.30),
+    'Haiti':               ( 18.97,  -72.29),
+    'New Zealand':         (-40.90,  174.89),
+    'Papua New Guinea':    ( -6.31,  143.96),
+    'Fiji':                (-17.71,  178.07),
 }
 
 
-def pick_target(mtype, src):
-    options = [c for c in TARGETS.get(mtype, TARGETS['malware']) if c != src]
-    return random.choice(options) if options else 'United States'
-
-
-def map_malware_type(family):
-    f = (family or '').lower()
-    if any(x in f for x in (
-        # RATs / post-exploitation frameworks
-        'cobalt', 'asyncrat', 'remcos', 'njrat', 'plugx', 'quasar',
-        'darkcomet', 'nanocore', 'xworm', 'sliver', 'havoc', 'metasploit',
-        # Banking trojans / loaders — all C2-driven
-        'emotet', 'qakbot', 'qbot', 'icedid', 'dridex', 'trickbot',
-        'bazarloader', 'bumblebee', 'gootkit', 'ursnif', 'zloader',
-        'amadey', 'systembc', 'pikabot', 'latrodectus',
-        # Info-stealers with C2 check-in
-        'stealc', 'redline', 'raccoon', 'lumma', 'vidar', 'formbook',
-        'agent tesla', 'lokibot', 'snake keylogger',
-    )):
-        return 'c2'
-    if any(x in f for x in (
-        'ransomware', 'lockbit', 'blackcat', 'clop', 'conti',
-        'revil', 'hive', 'sodinokibi', 'akira', 'phobos',
-        'blackbasta', 'rhysida', 'play', 'medusa',
-    )):
-        return 'exploit'
-    if 'phish' in f:
-        return 'phishing'
-    if any(x in f for x in ('scan', 'recon', 'masscan', 'zmap')):
-        return 'recon'
-    if any(x in f for x in ('ddos', 'flood', 'mirai', 'bashlite', 'moobot')):
-        return 'ddos'
-    return 'malware'
-
-
-def map_threat_type(raw):
-    t = (raw or '').lower()
-    if 'phish' in t:
-        return 'phishing'
-    if any(x in t for x in ('c2', 'cc', 'command', 'beacon', 'botnet')):
-        return 'c2'
-    if 'exploit' in t:
-        return 'exploit'
-    if any(x in t for x in ('recon', 'scan')):
-        return 'recon'
-    return 'malware'
-
-
-def _is_public_ip(ip):
-    try:
-        return not ipaddress.ip_address(ip).is_private
-    except ValueError:
-        return False
-
-
-def _geolocate_maxmind(ips):
-    """Geolocate IPs using local MaxMind GeoLite2 databases — no rate limits."""
-    results = {}
-    for ip in ips:
-        if not _is_public_ip(ip):
-            continue
-        try:
-            city = _city_reader.city(ip)
-            cc = city.country.iso_code or ''
-            country = ISO_TO_COUNTRY.get(cc)
-            if not country:
-                continue
-            asn_str = ''
-            if _asn_reader:
-                try:
-                    asn = _asn_reader.asn(ip)
-                    asn_str = f'AS{asn.autonomous_system_number} {asn.autonomous_system_organization}'
-                except Exception:
-                    pass
-            results[ip] = {
-                'country': country,
-                'lat':     round(city.location.latitude  or 0, 4),
-                'lon':     round(city.location.longitude or 0, 4),
-                'city':    city.city.name or '',
-                'asn':     asn_str,
-            }
-        except Exception:
-            pass
-    return results
-
-
-def _geolocate_ipapi(ips):
-    """Batch-geolocate IPs via ip-api.com free tier. Returns {ip: {country, lat, lon, city, asn}}."""
-    import urllib.error
-    results = {}
-    chunks = [ips[i:i + 100] for i in range(0, len(ips), 100)]
-    for idx, chunk in enumerate(chunks):
-        payload = json.dumps([
-            {'query': ip, 'fields': 'status,country,countryCode,lat,lon,city,regionName,as,query'}
-            for ip in chunk
-        ]).encode()
-        req = urllib.request.Request(
-            'http://ip-api.com/batch',
-            data=payload,
-            headers={'Content-Type': 'application/json'},
-            method='POST',
-        )
-        batch = None
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    batch = json.loads(r.read())
-                break
-            except urllib.error.HTTPError as e:
-                if e.code == 429:
-                    wait = 10 * (attempt + 1)
-                    print(f'  ip-api.com rate limited — waiting {wait}s before retry...')
-                    time.sleep(wait)
-                else:
-                    raise
-        if batch is None:
-            print('  ip-api.com: max retries hit, skipping batch')
-            continue
-        for entry in batch:
-            if entry.get('status') == 'success':
-                country = ISO_TO_COUNTRY.get(entry.get('countryCode', ''))
-                if country:
-                    results[entry['query']] = {
-                        'country': country,
-                        'lat': round(entry.get('lat', 0), 4),
-                        'lon': round(entry.get('lon', 0), 4),
-                        'city': entry.get('city', ''),
-                        'asn': entry.get('as', ''),
-                    }
-        if idx + 1 < len(chunks):
-            time.sleep(5)
-    return results
-
-
-def geolocate_ips(ips):
-    """Geolocate IPs. Uses MaxMind GeoLite2 if available, falls back to ip-api.com."""
-    if not ips:
-        return {}
-    return _geolocate_maxmind(ips) if _USE_MAXMIND else _geolocate_ipapi(ips)
-
-
-def fetch_feodo():
-    req = urllib.request.Request(
-        'https://feodotracker.abuse.ch/downloads/ipblocklist.json',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        entries = json.loads(r.read())
-
-    # Geolocate all IPs in one pass — unmapped ones need full lookup, mapped ones
-    # already have a country from Feodo's own field but still need lat/lon/ASN.
-    pre_mapped = {}  # ip → country from Feodo metadata
-    all_ips = []
-    for e in entries:
-        ip = e.get('ip_address', '')
-        if not ip:
-            continue
-        cc  = (e.get('country') or '').upper()
-        src = ISO_TO_COUNTRY.get(cc)
-        if src:
-            pre_mapped[ip] = src
-        all_ips.append(ip)
-
-    geo_detail = {}
-    try:
-        geo_detail = geolocate_ips(list(set(all_ips)))
-    except Exception:
-        pass
-
-    events = []
-    for e in entries:
-        ip     = e.get('ip_address', '')
-        if not ip:
-            continue
-        g   = geo_detail.get(ip, {})
-        src = g.get('country') or pre_mapped.get(ip)
-        if not src:
-            continue
-        mtype      = map_malware_type(e.get('malware', ''))
-        family     = e.get('malware', '')
-        first_seen = (e.get('first_seen') or '')[:10]
-        port       = e.get('port', 0) or 0
-        events.append({
-            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
-            'ip': ip, 'family': family, 'first_seen': first_seen, 'port': port,
-            'source': 'feodo',
-            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-            'city': g.get('city', ''), 'asn': g.get('asn', ''),
-        })
-    return events
-
-
-def _resolve(host):
-    """Resolve a hostname to an IPv4 address with a short timeout."""
-    try:
-        socket.setdefaulttimeout(2)
-        return socket.gethostbyname(host)
-    except Exception:
-        return None
-    finally:
-        socket.setdefaulttimeout(None)
-
-
-def fetch_openphish():
-    """Fetch active phishing URLs from OpenPhish — no API key."""
-    req = urllib.request.Request(
-        'https://openphish.com/feed.txt',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        lines = r.read().decode('utf-8').splitlines()
-
-    seen_hosts = set()
-    hosts = []
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        try:
-            host = line.split('://', 1)[-1].split('/')[0].split('@')[-1]
-            if ':' in host:
-                host = host.rsplit(':', 1)[0]
-            if host and host not in seen_hosts:
-                seen_hosts.add(host)
-                hosts.append(host)
-        except Exception:
-            continue
-
-    if not hosts:
-        return []
-
-    # Resolve all hosts to IPs (mix of raw IPs and domain lookups) in parallel
-    sample = random.sample(hosts, min(500, len(hosts)))
-    print(f'  OpenPhish: resolving {len(sample)} hosts...')
-    host_to_ip = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as pool:
-        futures = {pool.submit(_resolve, h): h for h in sample}
-        done, _ = concurrent.futures.wait(futures, timeout=60)
-        for fut in done:
-            host = futures[fut]
-            ip = fut.result()
-            if ip:
-                host_to_ip[host] = ip
-
-    unique_ips = list(set(host_to_ip.values()))
-    if not unique_ips:
-        return []
-
-    geo = geolocate_ips(unique_ips)
-    ip_to_country = {ip: geo[ip]['country'] for ip in unique_ips if ip in geo}
-
-    events = []
-    seen_ips = set()
-    for host, ip in host_to_ip.items():
-        src = ip_to_country.get(ip)
-        if src and ip not in seen_ips:
-            seen_ips.add(ip)
-            g = geo.get(ip, {})
-            events.append({
-                'src': src, 'tgt': pick_target('phishing', src), 'type': 'phishing',
-                'ip': ip, 'family': 'Phishing Site', 'first_seen': '',
-                'source': 'openphish',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_blocklist_de():
-    """Fetch attack IPs from Blocklist.de by category — no API key required."""
-    feeds = [
-        ('https://lists.blocklist.de/lists/ssh.txt',        'recon',    'SSH Brute Force'),
-        ('https://lists.blocklist.de/lists/apache.txt',     'exploit',  'Web Exploit'),
-        ('https://lists.blocklist.de/lists/bots.txt',       'ddos',     'Botnet'),
-        ('https://lists.blocklist.de/lists/mail.txt',       'phishing', 'Mail Spam'),
-        ('https://lists.blocklist.de/lists/imap.txt',       'recon',    'IMAP Brute Force'),
-        ('https://lists.blocklist.de/lists/ftp.txt',        'recon',    'FTP Brute Force'),
-        ('https://lists.blocklist.de/lists/strongips.txt',  'exploit',  'Persistent Attacker'),
-        ('https://lists.blocklist.de/lists/sip.txt',        'recon',    'VoIP Scan'),
-    ]
-    ip_entries = []
-    seen = set()
-
-    for url, mtype, family_label in feeds:
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'azimuth-threat-map/1.0'})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                lines = r.read().decode('utf-8').splitlines()
-            ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
-            sample = random.sample(ips, min(100, len(ips)))
-            for ip in sample:
-                if ip not in seen:
-                    seen.add(ip)
-                    ip_entries.append((ip, mtype, family_label))
-        except Exception:
-            pass
-
-    if not ip_entries:
-        return []
-
-    print(f'  Blocklist.de: geolocating {len(ip_entries)} IPs...')
-    geo = geolocate_ips([ip for ip, _, _ in ip_entries])
-
-    events = []
-    for ip, mtype, family_label in ip_entries:
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if src:
-            events.append({
-                'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
-                'ip': ip, 'family': family_label, 'first_seen': '',
-                'source': 'blocklist',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_emerging_threats():
-    """Fetch compromised IPs from Emerging Threats — no API key required."""
-    req = urllib.request.Request(
-        'https://rules.emergingthreats.net/blockrules/compromised-ips.txt',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        lines = r.read().decode('utf-8').splitlines()
-
-    ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#')]
-    if not ips:
-        return []
-
-    sample = random.sample(ips, min(200, len(ips)))
-    print(f'  Emerging Threats: geolocating {len(sample)} IPs...')
-    geo = geolocate_ips(sample)
-
-    events = []
-    for ip in sample:
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if src:
-            events.append({
-                'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
-                'ip': ip, 'family': 'Compromised Host', 'first_seen': '',
-                'source': 'emergingthreats',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_abuseipdb(api_key):
-    """Fetch blacklisted IPs from AbuseIPDB verbose endpoint."""
-    CAT_TYPE = {
-        4:  'ddos',
-        7:  'phishing',
-        14: 'recon', 18: 'recon', 22: 'recon', 5: 'recon',
-        15: 'exploit', 16: 'exploit', 20: 'exploit', 21: 'exploit',
-    }
-    CAT_FAMILY = {
-        4:  'DDoS Attack',
-        5:  'FTP Brute-Force',
-        7:  'Phishing',
-        11: 'Email Spam',
-        14: 'Port Scan',
-        15: 'Hacking',
-        16: 'SQL Injection',
-        18: 'Brute-Force',
-        20: 'Exploited Host',
-        21: 'Web App Attack',
-        22: 'SSH Brute-Force',
-        23: 'IoT Attack',
-    }
-    TYPE_FAMILY = {
-        'ddos':     'DDoS Attack',
-        'phishing': 'Phishing',
-        'recon':    'Port Scan',
-        'exploit':  'Web Attack',
-        'malware':  'Malware',
-        'c2':       'C2 Beacon',
-    }
-    TYPE_PRIORITY = ['ddos', 'exploit', 'phishing', 'recon', 'malware']
-
-    def pick_type(categories):
-        types = set()
-        for c in (categories or []):
-            t = CAT_TYPE.get(c)
-            if t:
-                types.add(t)
-        for t in TYPE_PRIORITY:
-            if t in types:
-                return t
-        return 'malware'
-
-    def pick_family(categories, mtype):
-        for cat in (categories or []):
-            if cat in CAT_FAMILY:
-                return CAT_FAMILY[cat]
-        return TYPE_FAMILY.get(mtype, 'Malware')
-
-    req = urllib.request.Request(
-        'https://api.abuseipdb.com/api/v2/blacklist?confidenceMinimum=90&limit=1000&verbose',
-        headers={
-            'Key': api_key,
-            'Accept': 'application/json',
-            'User-Agent': 'azimuth-threat-map/1.0',
-        },
-    )
+def cf_get(path, params=None):
+    url = CF_BASE + path
+    if params:
+        url += '?' + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        'Authorization': f'Bearer {CF_TOKEN}',
+        'Content-Type': 'application/json',
+        'User-Agent': 'azimuth-threat-map/1.0',
+    })
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
+    if not data.get('success'):
+        raise RuntimeError(f'Cloudflare API error: {data.get("errors")}')
+    return data['result']
 
-    entries = data.get('data', [])
-    if not entries:
-        return []
 
-    sample = random.sample(entries, min(1000, len(entries)))
-
-    # Collect IPs for enrichment
-    ip_list = [entry.get('ipAddress', '') for entry in sample if entry.get('ipAddress')]
-    print(f'  AbuseIPDB: enriching {len(ip_list)} IPs with coordinates...')
-    geo_detail = {}
-    try:
-        geo_detail = geolocate_ips(ip_list)
-    except Exception:
-        pass
-
-    events = []
-    for entry in sample:
-        cc      = (entry.get('countryCode') or '').upper()
-        src     = ISO_TO_COUNTRY.get(cc)
-        if not src:
+def _parse_locations(top_list, iso_key):
+    out = []
+    for row in top_list:
+        iso     = (row.get(iso_key) or '').upper()
+        country = ISO_TO_COUNTRY.get(iso)
+        if not country:
             continue
-        ip         = entry.get('ipAddress', '')
-        # Blacklist verbose endpoint puts categories inside reports[], not at top level
-        all_cats = []
-        for report in (entry.get('reports') or []):
-            all_cats.extend(report.get('categories') or [])
-        mtype        = pick_type(all_cats)
-        family       = pick_family(all_cats, mtype)
-        first_seen   = (entry.get('lastReportedAt') or '')[:10]
-        confidence   = entry.get('abuseConfidenceScore', 0)
-        total_reports = entry.get('totalReports', 0)
-        g            = geo_detail.get(ip, {})
+        try:
+            pct = float(row['value'])
+        except (KeyError, ValueError):
+            continue
+        if pct > 0:
+            out.append((country, pct))
+    return out
+
+
+def fetch_l3():
+    origin_r = cf_get('/attacks/layer3/top/locations/origin', {'limit': 20, 'dateRange': '1d'})
+    target_r = cf_get('/attacks/layer3/top/locations/target', {'limit': 20, 'dateRange': '1d'})
+    origins  = _parse_locations(origin_r.get('top_0', []), 'originCountryAlpha2')
+    targets  = _parse_locations(target_r.get('top_0', []), 'targetCountryAlpha2')
+    return origins, targets
+
+
+def fetch_l7():
+    origin_r = cf_get('/attacks/layer7/top/locations/origin', {'limit': 20, 'dateRange': '1d'})
+    target_r = cf_get('/attacks/layer7/top/locations/target', {'limit': 20, 'dateRange': '1d'})
+    origins  = _parse_locations(origin_r.get('top_0', []), 'originCountryAlpha2')
+    targets  = _parse_locations(target_r.get('top_0', []), 'targetCountryAlpha2')
+    return origins, targets
+
+
+def generate_events(origins, targets, mtype, family, n):
+    if not origins or not targets:
+        return []
+    src_c, src_w = zip(*origins)
+    tgt_c, tgt_w = zip(*targets)
+    events = []
+    for _ in range(n):
+        src = random.choices(src_c, weights=src_w)[0]
+        pairs = [(c, w) for c, w in zip(tgt_c, tgt_w) if c != src]
+        if not pairs:
+            continue
+        tc, tw = zip(*pairs)
+        tgt = random.choices(tc, weights=tw)[0]
+        lat, lon = CENTROIDS.get(src, (0.0, 0.0))
         events.append({
-            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
-            'ip': ip, 'family': family, 'first_seen': first_seen,
-            'confidence': confidence, 'total_reports': total_reports,
-            'source': 'abuseipdb',
-            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-            'city': g.get('city', ''), 'asn': g.get('asn', ''),
-        })
-    return events
-
-
-def fetch_threatfox(api_key=''):
-    """Fetch recent IP:port IOCs from ThreatFox (abuse.ch).
-    Uses authenticated API (days=7) when a key is available, otherwise falls back
-    to the public ip:port export which requires no authentication.
-    """
-    iocs = []
-
-    if api_key:
-        payload = json.dumps({'query': 'get_iocs', 'days': 7}).encode()
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'azimuth-threat-map/1.0',
-            'Auth-Key': api_key,
-        }
-        req = urllib.request.Request(
-            'https://threatfox-api.abuse.ch/api/v1/',
-            data=payload, headers=headers, method='POST',
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read())
-        status = data.get('query_status')
-        if status == 'ok':
-            iocs = data.get('data', []) or []
-        else:
-            print(f'  ThreatFox API returned status={status!r} — falling back to public export')
-            api_key = ''  # trigger public fallback
-
-    if not api_key:
-        # Public JSON export — no auth needed, updated every ~5 min.
-        # Format: date-keyed dict {"YYYY-MM-DD HH:MM:SS": [ioc, ...], ...}
-        req = urllib.request.Request(
-            'https://threatfox.abuse.ch/export/json/ip-port/recent/',
-            headers={'User-Agent': 'azimuth-threat-map/1.0'},
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            raw = json.loads(r.read())
-        if isinstance(raw, list):
-            iocs = raw
-        elif isinstance(raw, dict):
-            if 'data' in raw:
-                iocs = raw['data'] or []
-            else:
-                # Date-keyed export: {"2025-05-10 00:00:00": [ioc, ...], ...}
-                for v in raw.values():
-                    if isinstance(v, list):
-                        iocs.extend(v)
-
-    seen = set()
-    ip_entries = []
-
-    for ioc in iocs:
-        # API responses have ioc_type; public export is implicitly ip:port
-        if api_key and ioc.get('ioc_type') != 'ip:port':
-            continue
-        # API uses 'ioc_value'; public export uses 'ioc'
-        ioc_value = ioc.get('ioc_value') or ioc.get('ioc', '')
-        try:
-            if ioc_value.startswith('['):
-                ip = ioc_value[1:ioc_value.index(']')]
-            else:
-                ip = ioc_value.rsplit(':', 1)[0]
-        except Exception:
-            continue
-        if not ip or ip in seen:
-            continue
-        seen.add(ip)
-
-        family     = ioc.get('malware_printable', '') or ''
-        confidence = ioc.get('confidence_level', 50)
-        first_seen = (ioc.get('first_seen') or '')[:10]
-        mtype      = map_malware_type(family) if family else map_threat_type(ioc.get('threat_type', ''))
-        port       = 0
-        try:
-            port = int(ioc_value.rsplit(':', 1)[1])
-        except Exception:
-            pass
-
-        ip_entries.append({
-            'ip': ip, 'family': family or 'ThreatFox IOC', 'mtype': mtype,
-            'confidence': confidence, 'first_seen': first_seen, 'port': port,
-        })
-
-    if not ip_entries:
-        return []
-
-    print(f'  ThreatFox: geolocating {len(ip_entries)} IPs...')
-    geo = geolocate_ips([e['ip'] for e in ip_entries])
-
-    events = []
-    for entry in ip_entries:
-        g = geo.get(entry['ip'], {})
-        src = g.get('country')
-        if not src:
-            continue
-        events.append({
-            'src': src, 'tgt': pick_target(entry['mtype'], src),
-            'type': entry['mtype'], 'ip': entry['ip'],
-            'family': entry['family'], 'first_seen': entry['first_seen'],
-            'confidence': entry['confidence'], 'port': entry['port'],
-            'source': 'threatfox',
-            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-            'city': g.get('city', ''), 'asn': g.get('asn', ''),
-        })
-    return events
-
-
-def fetch_ipsum():
-    """Fetch high-confidence malicious IPs from IPsum (GitHub-hosted multi-feed aggregator).
-    IPsum aggregates 30+ public threat intelligence lists; each IP's score is the number
-    of lists it appears on. We sample IPs with score >= 5 for high confidence.
-    Hosted on GitHub raw content — no IP-based restrictions from CI runners.
-    """
-    req = urllib.request.Request(
-        'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        lines = r.read().decode('utf-8', errors='ignore').splitlines()
-
-    high_conf = []
-    medium_conf = []
-    for ln in lines:
-        ln = ln.strip()
-        if not ln or ln.startswith('#'):
-            continue
-        parts = ln.split('\t')
-        if len(parts) < 2:
-            continue
-        ip, score_str = parts[0], parts[1]
-        try:
-            score = int(score_str)
-        except ValueError:
-            continue
-        if not _is_public_ip(ip):
-            continue
-        if score >= 5:
-            high_conf.append((ip, score))
-        elif score >= 3:
-            medium_conf.append((ip, score))
-
-    # Prefer high-confidence IPs; fill up to 600 with medium-confidence
-    selected = high_conf + random.sample(medium_conf, min(max(0, 600 - len(high_conf)), len(medium_conf)))
-    selected = selected[:400]
-    random.shuffle(selected)
-
-    if not selected:
-        return []
-
-    print(f'  IPsum: geolocating {len(selected)} IPs (high-conf: {len(high_conf)})...')
-    geo = geolocate_ips([ip for ip, _ in selected])
-
-    events = []
-    for ip, score in selected:
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if src:
-            events.append({
-                'src': src, 'tgt': pick_target('malware', src), 'type': 'malware',
-                'ip': ip, 'family': 'IPsum', 'first_seen': '',
-                'confidence': min(99, 50 + score * 5),
-                'source': 'ipsum',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_cins():
-    """Fetch high-confidence malicious IPs from CINS Score — no API key required."""
-    req = urllib.request.Request(
-        'https://cinsscore.com/list/ci-badguys.txt',
-        headers={'User-Agent': 'azimuth-threat-map/1.0'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:
-        lines = r.read().decode('utf-8').splitlines()
-
-    ips = [ln.strip() for ln in lines if ln.strip() and not ln.startswith('#') and _is_public_ip(ln.strip())]
-    if not ips:
-        return []
-
-    sample = random.sample(ips, min(400, len(ips)))
-    print(f'  CINS Score: geolocating {len(sample)} IPs...')
-    geo = geolocate_ips(sample)
-
-    events = []
-    for ip in sample:
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if src:
-            events.append({
-                'src': src, 'tgt': pick_target('recon', src), 'type': 'recon',
-                'ip': ip, 'family': 'CINS Score', 'first_seen': '',
-                'source': 'cins',
-                'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-                'city': g.get('city', ''), 'asn': g.get('asn', ''),
-            })
-    return events
-
-
-def fetch_urlhaus(api_key=''):
-    """Fetch recent malware URLs from URLhaus (abuse.ch). Requires a free abuse.ch API key."""
-    headers = {'User-Agent': 'azimuth-threat-map/1.0'}
-    if api_key:
-        headers['Auth-Key'] = api_key
-    req = urllib.request.Request(
-        'https://urlhaus-api.abuse.ch/v1/urls/recent/',
-        headers=headers,
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.loads(r.read())
-
-    if api_key and (data.get('query_status') == 'unknown_auth_key' or data.get('error') == 'Unauthorized'):
-        raise ValueError('URLhaus API key invalid — get a free key at abuse.ch/register')
-
-    urls = data.get('urls', [])
-    if not urls:
-        return []
-
-    seen_hosts = set()
-    host_entries = []
-    for url_entry in urls:
-        url    = url_entry.get('url', '')
-        status = url_entry.get('url_status', '')
-        tags   = url_entry.get('tags') or []
-        threat = url_entry.get('threat', '')
-        try:
-            host = url.split('://', 1)[-1].split('/')[0].split('@')[-1]
-            if ':' in host and not host.startswith('['):
-                host = host.rsplit(':', 1)[0]
-        except Exception:
-            continue
-        if not host or host in seen_hosts:
-            continue
-        seen_hosts.add(host)
-        family = tags[0] if tags else (threat or 'URLhaus')
-        host_entries.append({'host': host, 'status': status, 'family': family})
-
-    # Prioritise online (active) threats
-    online  = [e for e in host_entries if e['status'] == 'online']
-    offline = [e for e in host_entries if e['status'] != 'online']
-    sample  = (random.sample(online, min(200, len(online))) +
-               random.sample(offline, min(100, len(offline))))
-
-    print(f'  URLhaus: resolving {len(sample)} hosts ({len(online)} active)...')
-    host_to_ip = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as pool:
-        futures = {pool.submit(_resolve, e['host']): e for e in sample}
-        done, _ = concurrent.futures.wait(futures, timeout=60)
-        for fut in done:
-            entry = futures[fut]
-            ip = fut.result()
-            if ip:
-                host_to_ip[entry['host']] = (ip, entry)
-
-    if not host_to_ip:
-        return []
-
-    unique_ips = list({ip for ip, _ in host_to_ip.values()})
-    geo = geolocate_ips(unique_ips)
-
-    events = []
-    seen_ips: set = set()
-    for host, (ip, entry) in host_to_ip.items():
-        if ip in seen_ips:
-            continue
-        seen_ips.add(ip)
-        g = geo.get(ip, {})
-        src = g.get('country')
-        if not src:
-            continue
-        mtype = map_malware_type(entry['family'])
-        events.append({
-            'src': src, 'tgt': pick_target(mtype, src), 'type': mtype,
-            'ip': ip, 'family': entry['family'], 'first_seen': '',
-            'active': entry['status'] == 'online',
-            'source': 'urlhaus',
-            'lat': g.get('lat', 0), 'lon': g.get('lon', 0),
-            'city': g.get('city', ''), 'asn': g.get('asn', ''),
+            'src': src, 'tgt': tgt, 'type': mtype,
+            'ip': '', 'family': family, 'first_seen': '',
+            'source': 'cloudflare',
+            'lat': lat, 'lon': lon,
+            'city': '', 'asn': '',
         })
     return events
 
 
 def main():
+    if not CF_TOKEN:
+        print('ERROR: CF_TOKEN environment variable not set')
+        return
+
     events = []
-    meta = _load_meta()
 
-    print('Fetching Feodo Tracker...')
+    print('Fetching Cloudflare Radar L3 (Network DDoS)...')
     try:
-        feodo = fetch_feodo()
-        events.extend(feodo)
-        print(f'  {len(feodo)} events')
+        l3_origins, l3_targets = fetch_l3()
+        l3 = generate_events(l3_origins, l3_targets, 'ddos', 'Network DDoS', 900)
+        events.extend(l3)
+        print(f'  {len(l3)} events from {len(l3_origins)} origins → {len(l3_targets)} targets')
     except Exception as e:
-        print(f'  Feodo failed: {e}')
+        print(f'  L3 failed: {e}')
 
-    print('Fetching OpenPhish...')
+    print('Fetching Cloudflare Radar L7 (HTTP Attacks)...')
     try:
-        openphish = fetch_openphish()
-        events.extend(openphish)
-        print(f'  {len(openphish)} events')
+        l7_origins, l7_targets = fetch_l7()
+        l7 = generate_events(l7_origins, l7_targets, 'exploit', 'HTTP Flood', 600)
+        events.extend(l7)
+        print(f'  {len(l7)} events from {len(l7_origins)} origins → {len(l7_targets)} targets')
     except Exception as e:
-        print(f'  OpenPhish failed: {e}')
-
-    print('Fetching Blocklist.de...')
-    try:
-        bld = fetch_blocklist_de()
-        events.extend(bld)
-        print(f'  {len(bld)} events')
-    except Exception as e:
-        print(f'  Blocklist.de failed: {e}')
-
-    print('Fetching Emerging Threats...')
-    try:
-        et = fetch_emerging_threats()
-        events.extend(et)
-        print(f'  {len(et)} events')
-    except Exception as e:
-        print(f'  Emerging Threats failed: {e}')
-
-    print('Checking CINS Score rate limit (max 1 fetch per 6 hours)...')
-    if _cins_ready(meta):
-        print('Fetching CINS Score...')
-        try:
-            cins = fetch_cins()
-            events.extend(cins)
-            print(f'  {len(cins)} events')
-            meta['cins_last_fetch'] = time.time()
-        except Exception as e:
-            print(f'  CINS Score failed: {e}')
-            events.extend(_cached_cins_events())
-    else:
-        events.extend(_cached_cins_events())
-
-    def _abuseipdb_github_fallback(reason):
-        print(f'  {reason} — pulling AbuseIPDB events from GitHub iocs.json...')
-        try:
-            events.extend(_github_abuseipdb_events())
-        except Exception as e2:
-            print(f'  GitHub fallback failed: {e2} — using local cache')
-            events.extend(_cached_abuseipdb_events())
-
-    abuseipdb_key = os.environ.get('ABUSEIPDB_KEY', '')
-    if abuseipdb_key:
-        print('Checking AbuseIPDB rate limit (max 1 call per 23 hours)...')
-        if _abuseipdb_ready(meta):
-            print('Fetching AbuseIPDB...')
-            try:
-                ab = fetch_abuseipdb(abuseipdb_key)
-                events.extend(ab)
-                print(f'  {len(ab)} events')
-                meta['abuseipdb_last_fetch'] = time.time()
-            except Exception as e:
-                _abuseipdb_github_fallback(f'AbuseIPDB API failed: {e}')
-        else:
-            _abuseipdb_github_fallback('AbuseIPDB on cooldown')
-    else:
-        _abuseipdb_github_fallback('No ABUSEIPDB_KEY set')
-
-    threatfox_key = os.environ.get('THREATFOX_KEY', '')
-    print('Fetching ThreatFox...')
-    try:
-        tf = fetch_threatfox(threatfox_key)
-        events.extend(tf)
-        print(f'  {len(tf)} indicators')
-    except Exception as e:
-        print(f'  ThreatFox failed: {e}')
-
-    print('Fetching URLhaus...')
-    try:
-        uh = fetch_urlhaus(threatfox_key)  # key is optional; works without one
-        events.extend(uh)
-        print(f'  {len(uh)} indicators')
-    except Exception as e:
-        print(f'  URLhaus failed: {e}')
-
-    print('Fetching IPsum (multi-feed aggregator)...')
-    try:
-        ip_sum = fetch_ipsum()
-        events.extend(ip_sum)
-        print(f'  {len(ip_sum)} events')
-    except Exception as e:
-        print(f'  IPsum failed: {e}')
-
-    # Deduplicate by IP — keep first (richest) entry per IP across all feeds
-    seen_ips: set = set()
-    deduped = []
-    for e in events:
-        ip = e.get('ip', '')
-        if ip and ip in seen_ips:
-            continue
-        if ip:
-            seen_ips.add(ip)
-        deduped.append(e)
-    events = deduped
+        print(f'  L7 failed: {e}')
 
     random.shuffle(events)
 
-    _save_meta(meta)
-
-    out = _IOCS_FILE
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(events, separators=(',', ':')))
-    print(f'Wrote {len(events)} indicators → {out}')
+    _IOCS_FILE.parent.mkdir(exist_ok=True)
+    _IOCS_FILE.write_text(json.dumps(events, separators=(',', ':')))
+    print(f'Wrote {len(events)} events → {_IOCS_FILE}')
 
 
 if __name__ == '__main__':

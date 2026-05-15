@@ -20,7 +20,7 @@ window.AzimuthFeed = (() => {
 
   /* ── Public: ingest an attack event ───────────────────────── */
   function addEvent(attack, countStats = true) {
-    const ip       = attack.ip || randomIP();
+    const ip       = attack.ip || '';
     const now      = Date.now();
     const typeInfo = TYPES[attack.type];
 
@@ -29,7 +29,7 @@ window.AzimuthFeed = (() => {
       attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
       targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
       typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
-      uniqueIPs.add(ip);
+      if (ip) uniqueIPs.add(ip);
     }
 
     perMinute.push(now);
@@ -71,6 +71,10 @@ window.AzimuthFeed = (() => {
 
     const div = document.createElement('div');
     div.className = 'feed-item' + (isNew ? ' new-item' : '');
+    const ipEl = item.ip
+      ? `<a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}`
+      : `<span class="fi-ip-link fi-ip-agg">Aggregate data</span>`;
+
     div.innerHTML = `
       <div class="fi-top">
         <span class="fi-type ${t.cls}">${t.label}</span>
@@ -81,7 +85,7 @@ window.AzimuthFeed = (() => {
         ${age ? `<span class="fi-time">${age}</span>` : ''}
       </div>
       <div class="fi-bot">
-        <a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}
+        ${ipEl}
         ${item.family ? `<span class="fi-family">${item.family}</span>` : ''}
         ${asnBadge}
         ${confBadge}
@@ -233,10 +237,6 @@ window.AzimuthFeed = (() => {
     return `${Math.floor(days / 7)}w ago`;
   }
 
-  function randomIP() {
-    return `${rr(1,254)}.${rr(0,254)}.${rr(0,254)}.${rr(1,254)}`;
-  }
-  function rr(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
   function timeStr() {
     const d = new Date();
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
