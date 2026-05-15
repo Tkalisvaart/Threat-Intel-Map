@@ -532,14 +532,24 @@ def main():
     # ── Generate weighted events ──────────────────────────────────────
     l3 = generate_events(l3_origins, l3_targets, 'ddos', l3_vectors, 900)
 
+    FALLBACK_L7_CATS = {
+        'recon':    {'Bot Traffic': 32.0, 'Automated Scanner': 14.0},
+        'exploit':  {'HTTP Anomaly': 12.0, 'SQL Injection': 6.0,
+                     'Cross-Site Scripting': 4.0, 'Remote Code Execution': 2.5,
+                     'Local File Inclusion': 1.5},
+        'ddos':     {'HTTP Flood': 18.0},
+        'malware':  {'Malware Delivery': 5.0},
+        'phishing': {'Phishing Attack': 3.0},
+        'c2':       {'Credential Stuffing': 1.5, 'Auth Bypass': 0.5},
+    }
+
     l7 = []
-    if l7_cats and l7_origins and l7_targets:
-        total_pct = sum(sum(f.values()) for f in l7_cats.values()) or 1
-        for mtype, families in l7_cats.items():
+    cats = l7_cats if (l7_cats and l7_origins and l7_targets) else FALLBACK_L7_CATS
+    if l7_origins and l7_targets:
+        total_pct = sum(sum(f.values()) for f in cats.values()) or 1
+        for mtype, families in cats.items():
             n = max(1, round(600 * sum(families.values()) / total_pct))
             l7.extend(generate_events(l7_origins, l7_targets, mtype, families, n))
-    else:
-        l7 = generate_events(l7_origins, l7_targets, 'exploit', l7_methods, 600)
 
     events = l3 + l7 + bgp_events
     random.shuffle(events)
