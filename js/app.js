@@ -31,14 +31,6 @@
   tickClock();
   setInterval(tickClock, 1000);
 
-  /* ── Intel source badge ─────────────────────────────────────── */
-  function setIntelSource(label, live) {
-    const el  = document.getElementById('ts-source');
-    const box = document.getElementById('intel-source-stat');
-    if (el)  el.textContent = label;
-    if (box) box.classList.toggle('source-live', live);
-  }
-
   /* ── Map init ───────────────────────────────────────────────── */
   await AzimuthMap.init();
 
@@ -225,50 +217,6 @@
     searchInput.value = '';
     AzimuthFeed.setSearch('');
   });
-
-  /* ── Intel source popup ─────────────────────────────────────── */
-  const intelStat  = document.getElementById('intel-source-stat');
-  const intelPopup = document.getElementById('intel-popup');
-
-  function updateIntelPopup() {
-    const s    = window.AZIMUTH_SOURCES;
-    const rows = [
-      { key: 'cf-l3', skey: 'cf_l3' },
-      { key: 'cf-l7', skey: 'cf_l7' },
-      // BGP count is populated by pollCFMeta, not AZIMUTH_SOURCES
-    ];
-
-    rows.forEach(({ key, skey }) => {
-      const el  = document.getElementById('ipc-' + key);
-      const row = document.getElementById('ipr-' + key);
-      const dot = row && row.querySelector('.ip-dot');
-      const count = s ? (s[skey] || 0) : 0;
-      if (el) {
-        el.textContent = s ? (count > 0 ? count.toLocaleString() + ' events' : 'inactive') : '—';
-        el.className   = 'ip-count' + (!s || count === 0 ? ' inactive' : '');
-      }
-      if (dot) dot.classList.toggle('active', !!s && count > 0);
-    });
-
-    const upd = document.getElementById('ipc-updated');
-    if (upd) {
-      if (s && s.updatedAt) {
-        const d  = new Date(s.updatedAt);
-        const hm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`;
-        upd.textContent = 'Data refreshed: ' + hm;
-      } else {
-        upd.textContent = s ? '' : 'No live data available';
-      }
-    }
-  }
-
-  intelStat.addEventListener('click', e => {
-    e.stopPropagation();
-    const isOpen = intelPopup.classList.toggle('open');
-    if (isOpen) updateIntelPopup();
-  });
-
-  document.addEventListener('click', () => intelPopup.classList.remove('open'));
 
   /* ── Keyboard Shortcuts Modal ───────────────────────────────── */
   const modal = document.getElementById('shortcuts-modal');
@@ -502,23 +450,20 @@
       const res = await fetch('./data/iocs.json', { cache: 'no-cache', headers });
 
       if (res.status === 304) return;
-      if (!res.ok) { setIntelSource('NO DATA', false); return; }
+      if (!res.ok) return;
 
       const lm = res.headers.get('Last-Modified');
       if (lm) _dataLastModified = lm;
 
       const events = await res.json();
-      if (!Array.isArray(events) || events.length === 0) { setIntelSource('NO DATA', false); return; }
+      if (!Array.isArray(events) || events.length === 0) return;
 
       _rawEvents = events;
       setRealFeedStats(events);
       saveHistorySnapshot(events);
-      _startAnimLoop(); // no-op after first call; queue drains into fresh data naturally
-      setIntelSource('LIVE INTEL', true);
+      _startAnimLoop();
       console.log(`[Threat Intel] ${events.length} events loaded`);
-    } catch (_) {
-      setIntelSource('NO DATA', false);
-    }
+    } catch (_) {}
   }
 
   pollRealFeed();

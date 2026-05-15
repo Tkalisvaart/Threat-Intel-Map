@@ -163,7 +163,6 @@ window.AzimuthFeed = (() => {
   }
 
   function renderStats() {
-    setText('ts-rate', perMinute.length);
     if (!window.AZIMUTH_REALSTATS) {
       setText('ts-total',     totalCount.toLocaleString());
       setText('ts-countries', Object.keys(attackerMap).length);
