@@ -395,9 +395,12 @@
 
     const sevEl = document.getElementById('ts-severity');
     if (sevEl) {
-      const exploit = valid.filter(e => e.type === 'exploit').length;
-      const ratio   = exploit / (valid.length || 1);
-      const level   = ratio > 0.4 ? 'CRITICAL' : ratio > 0.2 ? 'HIGH' : 'ELEVATED';
+      const n         = valid.length || 1;
+      const ddosRatio = valid.filter(e => e.type === 'ddos').length / n;
+      const highRatio = valid.filter(e => ['exploit','malware','c2'].includes(e.type)).length / n;
+      const level     = (ddosRatio > 0.5 || highRatio > 0.15) ? 'CRITICAL'
+                      : (ddosRatio > 0.3 || highRatio > 0.05) ? 'HIGH'
+                      : 'ELEVATED';
       sevEl.textContent = level;
       sevEl.className   = 'top-stat-val ' + (level === 'CRITICAL' ? 'red' : level === 'HIGH' ? 'amber' : 'green');
     }
@@ -526,15 +529,6 @@
       const meta = await res.json();
       renderAttackVectors(meta);
       renderIndustries(meta);
-      // Update BGP count in intel popup if it's open
-      const bgpEl = document.getElementById('ipc-cf-bgp');
-      const bgpDot = document.getElementById('ipr-cf-bgp')?.querySelector('.ip-dot');
-      if (bgpEl) {
-        const n = meta.bgp_count || 0;
-        bgpEl.textContent = n > 0 ? `${n} events` : 'none';
-        bgpEl.className = 'ip-count' + (n === 0 ? ' inactive' : '');
-      }
-      if (bgpDot) bgpDot.classList.toggle('active', (meta.bgp_count || 0) > 0);
     } catch (_) {}
   }
 

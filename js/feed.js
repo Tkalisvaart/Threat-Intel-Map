@@ -70,7 +70,7 @@ window.AzimuthFeed = (() => {
       ? `<span class="fi-asn" title="${item.asn}">${asnShort}</span>` : '';
 
     const div = document.createElement('div');
-    div.className = 'feed-item' + (isNew ? ' new-item' : '');
+    div.className = 'feed-item t-' + item.type + '-row' + (isNew ? ' new-item' : '');
     const ipEl = item.ip
       ? `<a class="fi-ip-link" href="${vtUrl}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>${portBadge}`
       : `<span class="fi-ip-link fi-ip-agg">Aggregate data</span>`;
