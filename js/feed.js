@@ -100,13 +100,13 @@ window.AzimuthFeed = (() => {
       });
       void list.offsetHeight;
       shifting.forEach(el => {
-        el.style.transition = 'transform 0.32s cubic-bezier(0.16, 1, 0.3, 1)';
+        el.style.transition = 'transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)';
         el.style.transform  = '';
       });
       setTimeout(() => shifting.forEach(el => {
         el.style.transform  = '';
         el.style.transition = '';
-      }), 380);
+      }), 460);
 
       while (list.children.length > 35) list.lastChild.remove();
       return;
