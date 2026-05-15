@@ -495,22 +495,6 @@ html, body {
 #intel-source-stat .top-stat-val         { color: var(--text3); }
 #intel-source-stat.source-live .top-stat-val { color: var(--green); }
 
-/* Breakdown */
-#breakdown {
-  padding: 8px 14px 10px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.breakdown-title {
-  font-size: 10px;
-  color: var(--text2);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 9px;
-  font-family: var(--font-display);
-  font-weight: 700;
-}
 
 .bd-row {
   display: flex;
@@ -790,9 +774,6 @@ html, body { width: 100%; }
   color: var(--green);
   letter-spacing: 0.05em;
   flex-shrink: 0;
-}
-.fam-name {
-  font-size: 10px;
 }
 .fi-active {
   font-size: 9px;

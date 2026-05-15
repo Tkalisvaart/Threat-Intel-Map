@@ -440,7 +440,7 @@
 
   function setRealFeedStats(events) {
     window.AZIMUTH_REALSTATS = true;
-    const { TYPES, GEO } = window.AZIMUTH_DATA;
+    const { GEO } = window.AZIMUTH_DATA;
     const valid = events.filter(e => GEO[e.src]);
 
     window.AZIMUTH_TOTAL_COUNT = valid.length;
@@ -497,20 +497,6 @@
       sevEl.textContent = level;
       sevEl.className   = 'top-stat-val ' + (level === 'CRITICAL' ? 'red' : level === 'HIGH' ? 'amber' : 'green');
     }
-
-    // Indicator type breakdown from real data
-    const typeMap = {};
-    valid.forEach(e => { if (e.type) typeMap[e.type] = (typeMap[e.type] || 0) + 1; });
-    const total = valid.length || 1;
-    Object.keys(TYPES).forEach(k => {
-      const pct = Math.round((typeMap[k] || 0) / total * 100);
-      const fill  = document.getElementById('bd-' + k);
-      const pctEl = document.getElementById('bpct-' + k);
-      if (fill)  fill.style.width  = pct + '%';
-      if (pctEl) pctEl.textContent = pct + '%';
-    });
-
-    window.AZIMUTH_TYPEMAP = typeMap;
 
     window.AZIMUTH_SOURCES = {
       ...feedCounts,

@@ -11,7 +11,6 @@ window.AzimuthFeed = (() => {
   let attackerMap  = {};  // country → count (IOC origin)
   let targetMap    = {};  // country → count (estimated target, kept for drawer)
   let typeMap      = {};  // type → count
-  let familyMap    = {};  // family → count
   let uniqueIPs    = new Set();
   let totalCount   = 0;
   let perMinute    = [];  // timestamps for rate calc
@@ -30,7 +29,6 @@ window.AzimuthFeed = (() => {
       attackerMap[attack.src] = (attackerMap[attack.src] || 0) + 1;
       targetMap[attack.tgt]   = (targetMap[attack.tgt]   || 0) + 1;
       typeMap[attack.type]    = (typeMap[attack.type]    || 0) + 1;
-      if (attack.family) familyMap[attack.family] = (familyMap[attack.family] || 0) + 1;
       uniqueIPs.add(ip);
     }
 
@@ -54,8 +52,6 @@ window.AzimuthFeed = (() => {
     renderStats();
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
     renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
-    renderTopFamilies();
-    renderBreakdown();
   }
 
   /* ── Rendering ─────────────────────────────────────────────── */
@@ -188,48 +184,6 @@ window.AzimuthFeed = (() => {
       </div>`).join('');
   }
 
-  // Intel source names and generic category labels that are not real malware families
-  const _GENERIC_FAMILIES = new Set([
-    'AbuseIPDB', 'CINS Score', 'IPsum', 'ThreatFox IOC', 'URLhaus',
-    'Phishing Site', 'Compromised Host',
-    'SSH Brute Force', 'Web Exploit', 'Botnet', 'Mail Spam',
-    'IMAP Brute Force', 'FTP Brute Force', 'Persistent Attacker', 'VoIP Scan',
-    'DDoS Attack', 'Port Scan', 'Hacking', 'SQL Injection', 'Brute-Force',
-    'Exploited Host', 'Web App Attack', 'SSH Brute-Force', 'FTP Brute-Force',
-    'Email Spam', 'IoT Attack', 'Web Attack', 'Malware', 'C2 Beacon',
-    'Unknown malware', '32-bit',
-  ]);
-
-  function renderTopFamilies() {
-    const el = document.getElementById('top-families');
-    if (!el) return;
-    const sorted = Object.entries(familyMap)
-      .filter(([f]) => !_GENERIC_FAMILIES.has(f))
-      .sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const max = sorted[0] ? sorted[0][1] : 1;
-    el.innerHTML = sorted.map(([family, count], i) => `
-      <div class="attacker-row">
-        <span class="att-rank">${i + 1}</span>
-        <span class="att-country fam-name">${family}</span>
-        <div class="att-bar-wrap">
-          <div class="tgt-bar" style="width:${Math.round(count / max * 100)}%"></div>
-        </div>
-        <span class="tgt-count">${count}</span>
-      </div>`).join('');
-  }
-
-  function renderBreakdown() {
-    if (window.AZIMUTH_REALSTATS) return;  // real feed controls breakdown
-    const total = Object.values(typeMap).reduce((a, b) => a + b, 0) || 1;
-    Object.keys(TYPES).forEach(k => {
-      const pct = Math.round((typeMap[k] || 0) / total * 100);
-      const fill = document.getElementById('bd-' + k);
-      const pctEl = document.getElementById('bpct-' + k);
-      if (fill)  fill.style.width = pct + '%';
-      if (pctEl) pctEl.textContent = pct + '%';
-    });
-  }
-
   /* ── Filter ─────────────────────────────────────────────────── */
   function setFilter(f) {
     activeFilter = f;
@@ -298,17 +252,14 @@ window.AzimuthFeed = (() => {
     // Reset and rebuild from the authoritative dataset on every poll
     attackerMap = {};
     targetMap   = {};
-    familyMap   = {};
     typeMap     = {};
     events.forEach(e => {
-      if (e.src)    attackerMap[e.src]    = (attackerMap[e.src]    || 0) + 1;
-      if (e.tgt)    targetMap[e.tgt]      = (targetMap[e.tgt]      || 0) + 1;
-      if (e.family) familyMap[e.family]   = (familyMap[e.family]   || 0) + 1;
-      if (e.type)   typeMap[e.type]       = (typeMap[e.type]       || 0) + 1;
+      if (e.src)  attackerMap[e.src]  = (attackerMap[e.src]  || 0) + 1;
+      if (e.tgt)  targetMap[e.tgt]    = (targetMap[e.tgt]    || 0) + 1;
+      if (e.type) typeMap[e.type]     = (typeMap[e.type]     || 0) + 1;
     });
     renderLeaderboard(attackerMap, 'attackers', 'att-bar', 'att-count');
     renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
-    renderTopFamilies();
     if (window.AzimuthMap) window.AzimuthMap.invalidateHeat();
   }
 
@@ -334,7 +285,7 @@ window.AzimuthFeed = (() => {
   function getMinuteHistory() { return minuteHistory; }
   function getTypeMap()      { return { ...typeMap }; }
 
-  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf, getTypeMap, getFamilyMap: () => ({ ...familyMap }) };
+  return { addEvent, ingestBatch, setFilter, setSearch, getCountryStats, getAttackerMap, getAllEvents, getTimeline, getMinuteHistory, getTargetMap: () => targetMap, getTopTargetsOf, getTopSourcesOf, getTypeBreakdownOf, getTypeMap };
 })();
 
 document.getElementById('feed-list').addEventListener('click', e => {
