@@ -111,14 +111,6 @@ window.AzimuthFeed = (() => {
       );
     }
 
-    const total = (window.AZIMUTH_REALSTATS && window.AZIMUTH_TOTAL_COUNT)
-      ? window.AZIMUTH_TOTAL_COUNT : items.length;
-    const countEl = document.getElementById('feed-count');
-    if (window.AZIMUTH_REALSTATS && (activeFilter !== 'all' || activeSearch)) {
-      countEl.textContent = items.length + ' of ' + total.toLocaleString() + ' indicators';
-    } else {
-      countEl.textContent = total.toLocaleString() + ' indicators';
-    }
 
     // Incremental update: prepend one new item with FLIP push-down animation
     if (isNewItem && list.children.length > 0 && items.length > 0) {
