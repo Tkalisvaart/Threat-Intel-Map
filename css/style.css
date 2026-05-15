@@ -275,9 +275,11 @@ html, body {
 /* ── Feed List ─────────────────────────────────────────────────── */
 #feed-list {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
   padding: 0;
+  scrollbar-width: none;
 }
+#feed-list::-webkit-scrollbar { display: none; }
 
 /* ── Feed Items ────────────────────────────────────────────────── */
 .feed-item {
@@ -288,7 +290,6 @@ html, body {
   border-left: 3px solid transparent;
 }
 .feed-item:hover { background: rgba(0, 212, 255, 0.03); }
-.feed-item.new-item { animation: feed-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* Type-coded left borders */
 .feed-item.t-malware-row  { border-left-color: rgba(255, 34, 68, 0.35); }
@@ -306,10 +307,6 @@ html, body {
 .feed-item.t-c2-row:hover       { border-left-color: var(--green);  background: rgba(0,255,136,0.04); }
 .feed-item.t-exploit-row:hover  { border-left-color: var(--orange); background: rgba(255,119,51,0.04); }
 
-@keyframes feed-enter {
-  from { opacity: 0; transform: translateY(-52px); }
-  to   { opacity: 1; transform: none; }
-}
 
 .fi-top {
   display: flex;

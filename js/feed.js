@@ -54,13 +54,13 @@ window.AzimuthFeed = (() => {
     renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar',  'att-count tgt-count');
   }
 
-  function buildFeedItem(item, isNew) {
-    const t      = TYPES[item.type];
-    const age    = ageStr(item.first_seen);
+  function buildFeedItem(item) {
+    const t        = TYPES[item.type];
+    const age      = ageStr(item.first_seen);
     const asnShort = item.asn ? item.asn.split(' ').slice(0, 2).join(' ') : '';
 
     const div = document.createElement('div');
-    div.className = 'feed-item t-' + item.type + '-row' + (isNew ? ' new-item' : '');
+    div.className = 'feed-item t-' + item.type + '-row';
 
     const ipEl = item.ip
       ? `<a class="fi-ip-link" href="https://www.virustotal.com/gui/ip-address/${item.ip}" target="_blank" rel="noopener noreferrer" title="Look up on VirusTotal">${item.ip}</a>`
@@ -82,41 +82,42 @@ window.AzimuthFeed = (() => {
     return div;
   }
 
+  /* ── Smooth scroll drive ────────────────────────────────────── */
+  let _scrollRaf = null;
+  let _scrollTs  = null;
+  let _scrollRate = 0; // px per ms
+
+  function driveScroll(list) {
+    if (_scrollRaf) return;
+    _scrollTs = null;
+    function step(ts) {
+      if (_scrollTs === null) { _scrollTs = ts; _scrollRaf = requestAnimationFrame(step); return; }
+      const dt = ts - _scrollTs;
+      _scrollTs = ts;
+      list.scrollTop = Math.max(0, list.scrollTop - dt * _scrollRate);
+      if (list.scrollTop > 0) { _scrollRaf = requestAnimationFrame(step); }
+      else                    { _scrollRaf = null; }
+    }
+    _scrollRaf = requestAnimationFrame(step);
+  }
+
   function renderFeed(isNewItem = false) {
     const list = document.getElementById('feed-list');
 
-    // Incremental update: FLIP push-down animation for new item
-    if (isNewItem && list.children.length > 0 && feedItems.length > 0) {
-      const shifting = Array.from(list.children).slice(0, 14);
-      const tops     = shifting.map(el => el.getBoundingClientRect().top);
-
-      list.insertBefore(buildFeedItem(feedItems[0], true), list.firstChild);
-
-      shifting.forEach((el, i) => {
-        const dy = el.getBoundingClientRect().top - tops[i];
-        if (!dy) return;
-        el.style.transition = 'none';
-        el.style.transform  = `translateY(${-dy}px)`;
-      });
-      void list.offsetHeight;
-      shifting.forEach(el => {
-        el.style.transition = 'transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)';
-        el.style.transform  = '';
-      });
-      setTimeout(() => shifting.forEach(el => {
-        el.style.transform  = '';
-        el.style.transition = '';
-      }), 460);
-
+    if (isNewItem && feedItems.length > 0) {
+      const el = buildFeedItem(feedItems[0]);
+      list.insertBefore(el, list.firstChild);
+      const itemH = el.offsetHeight || 52;
+      list.scrollTop += itemH;
+      _scrollRate = itemH / 330; // drain in ~330ms — just under the spawn interval
+      driveScroll(list);
       while (list.children.length > 35) list.lastChild.remove();
       return;
     }
 
     // Full rebuild
     list.innerHTML = '';
-    feedItems.slice(0, 35).forEach((item, i) => {
-      list.appendChild(buildFeedItem(item, i === 0 && isNewItem));
-    });
+    feedItems.slice(0, 35).forEach(item => list.appendChild(buildFeedItem(item)));
   }
 
   function renderStats() {
