@@ -1,15 +1,15 @@
 {
   "l3_vectors": {
-    "Mirai (Udp) Flood": 44.765529,
-    "Udp Flood": 28.033536,
-    "Syn Flood": 8.993903,
-    "Ack Flood": 3.783044,
-    "Dns Flood": 3.604897,
-    "Cldap Flood": 3.036229,
-    "Tls Client Hello Flood": 1.431108,
-    "Udp Fragments Flood": 1.194137,
-    "Dns Amplification": 1.123483,
-    "Other": 4.034135
+    "Mirai (Udp) Flood": 44.949232,
+    "Udp Flood": 28.024347,
+    "Syn Flood": 8.975631,
+    "Ack Flood": 3.833266,
+    "Dns Flood": 3.391626,
+    "Cldap Flood": 3.015075,
+    "Tls Client Hello Flood": 1.425196,
+    "Udp Fragments Flood": 1.214027,
+    "Dns Amplification": 1.130894,
+    "Other": 4.040704
   },
   "l3_protocols": {
     "UDP": 83.998914,
@@ -44,5 +44,5 @@
   "bgp_count": 0,
   "l3_count": 900,
   "l7_count": 600,
-  "updatedAt": "2026-05-15T03:48:32Z"
+  "updatedAt": "2026-05-15T03:50:58Z"
 }
