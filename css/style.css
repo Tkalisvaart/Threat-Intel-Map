@@ -99,39 +99,6 @@ html, body {
   pointer-events: none;
 }
 
-/* ── Logo ─────────────────────────────────────────────────────── */
-#logo {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-right: 24px;
-  flex-shrink: 0;
-}
-
-#logo-mark svg {
-  width: 28px;
-  height: 28px;
-  display: block;
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.45));
-}
-
-#logo-name {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 800;
-  color: #e8f4ff;
-  letter-spacing: 0.14em;
-  line-height: 1;
-}
-
-#logo-sub {
-  font-size: 8.5px;
-  color: var(--text2);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  margin-top: 3px;
-  opacity: 0.75;
-}
 
 /* ── Top Stats ─────────────────────────────────────────────────── */
 .top-stat {
@@ -273,17 +240,6 @@ html, body {
   text-transform: uppercase;
 }
 
-.panel-count {
-  font-size: 9px;
-  color: var(--accent);
-  background: var(--accent-dim);
-  border: 1px solid rgba(0, 212, 255, 0.18);
-  padding: 2px 7px;
-  border-radius: var(--radius);
-  margin-left: auto;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
 
 .panel-header-split { justify-content: space-between; }
 .panel-title-sub {
@@ -317,86 +273,6 @@ html, body {
   overflow: hidden;
 }
 
-/* ── Search Bar ────────────────────────────────────────────────── */
-#search-wrap {
-  display: flex;
-  gap: 0;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-#feed-search {
-  flex: 1;
-  background: var(--bg3);
-  border: 1px solid var(--border2);
-  border-right: none;
-  border-radius: var(--radius) 0 0 var(--radius);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 5px 10px;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-#feed-search:focus {
-  border-color: var(--accent2);
-  box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.08);
-}
-#feed-search::placeholder { color: var(--text3); }
-
-#search-clear {
-  background: var(--bg3);
-  border: 1px solid var(--border2);
-  border-left: none;
-  border-radius: 0 var(--radius) var(--radius) 0;
-  color: var(--text3);
-  font-size: 10px;
-  padding: 0 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s;
-}
-#search-clear:hover { color: var(--red); }
-
-/* ── Filter Bar ────────────────────────────────────────────────── */
-#filter-bar {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-#filter-bar::-webkit-scrollbar { display: none; }
-
-.filter-btn {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  padding: 4px 11px;
-  border: 1px solid var(--border2);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--text3);
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  transition: all 0.15s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.filter-btn:hover  { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-.filter-btn.active { background: var(--accent-dim); border-color: rgba(0,212,255,0.4); color: var(--accent); }
-.filter-btn.f-malware.active  { background: var(--red-dim);    border-color: rgba(255,34,68,0.4);   color: var(--red); }
-.filter-btn.f-ddos.active     { background: var(--amber-dim);  border-color: rgba(255,170,0,0.4);   color: var(--amber); }
-.filter-btn.f-phishing.active { background: var(--purple-dim); border-color: rgba(160,51,255,0.4);  color: var(--purple); }
-.filter-btn.f-recon.active    { background: var(--accent-dim); border-color: rgba(0,212,255,0.4);   color: var(--accent); }
-.filter-btn.f-c2.active       { background: var(--green-dim);  border-color: rgba(0,255,136,0.4);   color: var(--green); }
-.filter-btn.f-exploit.active  { background: var(--orange-dim); border-color: rgba(255,119,51,0.4);  color: var(--orange); }
 
 /* ── Feed List ─────────────────────────────────────────────────── */
 #feed-list {
@@ -456,7 +332,7 @@ html, body {
 }
 
 .fi-src  { font-size: 11px; color: #cce0f0; font-weight: 500; letter-spacing: 0.01em; }
-.fi-arr  { font-size: 10px; color: var(--text3); }
+.fi-arr  { font-size: 10px; color: var(--text2); }
 .fi-tgt  { font-size: 11px; color: var(--text2); }
 .fi-time { font-size: 9px; color: var(--text3); margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 
