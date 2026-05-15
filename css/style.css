@@ -366,37 +366,6 @@ html, body {
   font-style: italic;
 }
 
-.fi-conf {
-  font-size: 8px;
-  font-weight: 700;
-  color: var(--green);
-  background: var(--green-dim);
-  border: 1px solid rgba(0,255,136,0.18);
-  padding: 1px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
-}
-
-.fi-active {
-  font-size: 8px;
-  font-weight: 700;
-  color: var(--red);
-  background: var(--red-dim);
-  border: 1px solid rgba(255,34,68,0.18);
-  padding: 1px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.08em;
-  flex-shrink: 0;
-  animation: pulse-dot 1.3s ease-in-out infinite;
-}
-
-.fi-port {
-  font-size: 10px;
-  color: var(--text3);
-  font-variant-numeric: tabular-nums;
-}
-
 .fi-asn {
   font-size: 9px;
   color: var(--text3);
@@ -597,23 +566,6 @@ html, body {
 .hl-cyan { background: radial-gradient(circle, rgba(0,180,255,0.9) 0%, rgba(0,180,255,0.2) 70%);
            box-shadow: 0 0 5px rgba(0,180,255,0.55); }
 
-/* Impact ring animation */
-@keyframes impact {
-  0%   { opacity: 1; transform: translate(-50%,-50%) scale(0.2); }
-  60%  { opacity: 0.6; }
-  100% { opacity: 0; transform: translate(-50%,-50%) scale(3); }
-}
-.impact-ring {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid;
-  pointer-events: none;
-  transform: translate(-50%,-50%) scale(0.2);
-  animation: impact 0.75s ease-out forwards;
-}
-
 /* ── Right Panel ───────────────────────────────────────────────── */
 #right {
   background: var(--bg1);
@@ -776,14 +728,6 @@ html, body {
   text-align: right;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-}
-
-/* ── History Canvas ────────────────────────────────────────────── */
-#history-canvas {
-  display: block;
-  width: 100%;
-  height: 56px;
-  border-radius: 2px;
 }
 
 /* ── Theater / Focus Mode ──────────────────────────────────────── */

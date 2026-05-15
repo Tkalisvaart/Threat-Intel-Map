@@ -15,7 +15,6 @@ window.AzimuthMap = (() => {
   let canvas, ctx;                // overlay: cleared every frame
   let mapW, mapH;
   let arcs       = [];
-  let particles  = [];
   let pulseRings = [];
   let showArcs   = true;
   let showHeat   = true;
@@ -339,17 +338,12 @@ window.AzimuthMap = (() => {
 
         if (showHeat) drawHeat();
         drawPulseRings();
-        drawParticles();
-
         ctx.restore();
-
-        // Arcs drawn outside the globe clip so they can float above the surface
         if (showArcs) drawArcs();
       } else {
         if (showHeat) drawHeat();
         if (showArcs) drawArcs();
         drawPulseRings();
-        drawParticles();
       }
 
       lastFrame = ts;
@@ -616,24 +610,6 @@ window.AzimuthMap = (() => {
     ctx.restore();
   }
 
-  /* ── Particles ───────────────────────────────────────────────── */
-  function drawParticles() {
-    const now = Date.now();
-    particles = particles.filter(p => (now - p.born) < p.ttl);
-    particles.forEach(p => {
-      const life = 1 - (now - p.born) / p.ttl;
-      p.x += p.vx; p.y += p.vy;
-      p.vx *= 0.93; p.vy *= 0.93;
-      ctx.save();
-      ctx.globalAlpha = life * 0.85;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * life, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.fill();
-      ctx.restore();
-    });
-  }
-
   /* ── Pulse rings ─────────────────────────────────────────────── */
   function drawPulseRings() {
     const now = Date.now();
@@ -656,7 +632,7 @@ window.AzimuthMap = (() => {
   function setShowArcs(v) { showArcs = v; }
   function setShowHeat(v) { showHeat = v; }
   function setPaused(v)   { paused   = v; }
-  function clearArcs()    { arcs = []; particles = []; pulseRings = []; }
+  function clearArcs()    { arcs = []; pulseRings = []; }
   function invalidateHeat() { _heatOff = null; _lastHeatTs = 0; }
 
   function toggleGlobe() {
@@ -703,5 +679,5 @@ window.AzimuthMap = (() => {
   }
 
   return { init, addArc, setShowArcs, setShowHeat, setPaused, clearArcs,
-           lonLatToXY, resize: onResize, toggleGlobe, invalidateHeat };
+           resize: onResize, toggleGlobe, invalidateHeat };
 })();
