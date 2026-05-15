@@ -1,10 +1,48 @@
 {
-  "l3_vectors": {},
-  "l3_protocols": {},
-  "l7_methods": {},
-  "l7_industries": {},
+  "l3_vectors": {
+    "Mirai (Udp) Flood": 45.8006,
+    "Udp Flood": 25.684913,
+    "Syn Flood": 8.95643,
+    "Dns Flood": 4.557096,
+    "Ack Flood": 3.836905,
+    "Cldap Flood": 3.11388,
+    "Tls Client Hello Flood": 1.45698,
+    "Udp Fragments Flood": 1.285588,
+    "Dns Amplification": 1.26813,
+    "Other": 4.039475
+  },
+  "l3_protocols": {
+    "UDP": 84.10319,
+    "TCP": 15.868386,
+    "ICMP": 0.017463,
+    "GRE": 0.006602
+  },
+  "l7_methods": {
+    "HTTP GET Flood": 76.67629,
+    "HTTP POST Flood": 20.380211,
+    "HTTP HEAD Flood": 1.772207,
+    "HTTP OPTIONS Flood": 0.703759,
+    "HTTP PATCH Flood": 0.182511,
+    "HTTP DELETE Flood": 0.145963,
+    "HTTP PUT Flood": 0.1321,
+    "HTTP UNKNOWN Flood": 0.006705,
+    "HTTP ACL Flood": 0.000177,
+    "HTTP other Flood": 7.6e-05
+  },
+  "l7_industries": {
+    "Media": 20.119654,
+    "Computer Software": 17.829457,
+    "Information Technology and Services": 11.736743,
+    "Gambling & Casinos": 9.495224,
+    "Retail": 8.280959,
+    "Online Media": 3.328718,
+    "Cryptocurrency": 3.149831,
+    "Arts and Crafts": 3.137456,
+    "Telecommunications": 3.000649,
+    "Internet": 2.509634
+  },
   "bgp_count": 0,
-  "l3_count": 0,
-  "l7_count": 0,
-  "updatedAt": null
+  "l3_count": 900,
+  "l7_count": 600,
+  "updatedAt": "2026-05-15T02:46:02Z"
 }
