@@ -1,44 +1,48 @@
 {
   "l3_vectors": {
-    "UDP Flood": 37.2,
-    "SYN Flood": 22.8,
-    "DNS Amplification": 14.4,
-    "ACK Flood": 8.6,
-    "NTP Amplification": 6.3,
-    "ICMP Flood": 4.1,
-    "TCP Reset Flood": 3.2,
-    "SSDP Amplification": 2.1,
-    "GRE Flood": 0.8,
-    "Memcached Amp": 0.5
+    "Mirai (Udp) Flood": 44.949232,
+    "Udp Flood": 28.024347,
+    "Syn Flood": 8.975631,
+    "Ack Flood": 3.833266,
+    "Dns Flood": 3.391626,
+    "Cldap Flood": 3.015075,
+    "Tls Client Hello Flood": 1.425196,
+    "Udp Fragments Flood": 1.214027,
+    "Dns Amplification": 1.130894,
+    "Other": 4.040704
   },
   "l3_protocols": {
-    "UDP": 67.4,
-    "TCP": 28.3,
-    "ICMP": 3.2,
-    "GRE": 1.1
+    "UDP": 83.998914,
+    "TCP": 15.973029,
+    "ICMP": 0.017199,
+    "GRE": 0.006539
   },
   "l7_methods": {
-    "HTTP GET Flood": 54.3,
-    "HTTP POST Flood": 28.7,
-    "HTTP HEAD Flood": 9.2,
-    "HTTP PUT Flood": 4.6,
-    "HTTP DELETE Flood": 2.1,
-    "HTTP OPTIONS": 1.1
+    "HTTP GET Flood": 76.759079,
+    "HTTP POST Flood": 20.320953,
+    "HTTP HEAD Flood": 1.764493,
+    "HTTP OPTIONS Flood": 0.691186,
+    "HTTP PATCH Flood": 0.181272,
+    "HTTP DELETE Flood": 0.145092,
+    "HTTP PUT Flood": 0.131004,
+    "HTTP UNKNOWN Flood": 0.006668,
+    "HTTP ACL Flood": 0.000176,
+    "HTTP other Flood": 7.6e-05
   },
   "l7_industries": {
-    "Technology": 28.4,
-    "Financial Services": 18.7,
-    "Gaming": 14.2,
-    "Telecommunications": 9.6,
-    "E-commerce": 8.3,
-    "Government": 6.1,
-    "Healthcare": 5.2,
-    "Media & Entertainment": 4.8,
-    "Education": 3.1,
-    "Transportation": 1.6
+    "Media": 20.04885,
+    "Computer Software": 17.875574,
+    "Information Technology and Services": 11.808933,
+    "Gambling & Casinos": 9.618003,
+    "Retail": 8.285134,
+    "Online Media": 3.323258,
+    "Cryptocurrency": 3.154927,
+    "Arts and Crafts": 3.153055,
+    "Telecommunications": 2.971656,
+    "Internet": 2.506067
   },
   "bgp_count": 0,
   "l3_count": 900,
   "l7_count": 600,
-  "updatedAt": "2026-05-15T03:07:07Z"
+  "updatedAt": "2026-05-15T03:10:45Z"
 }
