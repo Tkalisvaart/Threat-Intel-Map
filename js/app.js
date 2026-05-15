@@ -12,7 +12,7 @@
   let _animQueue          = [];
   let _animTimer          = null;
 
-  const ANIM_INTERVAL_MS = 350;
+  const ANIM_INTERVAL_MS = 700;
 
   /* ── Clock + uptime ─────────────────────────────────────────── */
   const sessionStart = Date.now();

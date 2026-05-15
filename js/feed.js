@@ -115,7 +115,7 @@ window.AzimuthFeed = (() => {
       if (!_cachedItemH) _cachedItemH = el.offsetHeight || 52; // measure once
       _scrollPos += _cachedItemH;
       list.scrollTop = _scrollPos;
-      _scrollRate = _cachedItemH / 330; // drain in ~330ms
+      _scrollRate = _cachedItemH / 650; // drain in ~650ms
       driveScroll(list);
       while (list.children.length > 35) list.lastChild.remove();
       return;
