@@ -222,6 +222,21 @@ CENTROIDS = {
     'Fiji':                (-17.71,  178.07),
 }
 
+# CF managed rules category → (our attack type, family label)
+L7_CAT_MAP = {
+    'BOT':          ('recon',    'Bot Traffic'),
+    'DOS':          ('ddos',     'HTTP Flood'),
+    'HTTP_ANOMALY': ('exploit',  'HTTP Anomaly'),
+    'SQLI':         ('exploit',  'SQL Injection'),
+    'XSS':          ('exploit',  'Cross-Site Scripting'),
+    'RCE':          ('exploit',  'Remote Code Execution'),
+    'LFI':          ('exploit',  'Local File Inclusion'),
+    'MALWARE':      ('malware',  'Malware Delivery'),
+    'PHISHING':     ('phishing', 'Phishing Attack'),
+    'CREDENTIAL':   ('c2',       'Credential Stuffing'),
+    'BROKEN_AUTH':  ('c2',       'Auth Bypass'),
+}
+
 # Human-readable labels for CF Radar vector/protocol keys
 L3_VECTOR_LABELS = {
     'UDP_FLOOD':           'UDP Flood',
@@ -351,6 +366,25 @@ def fetch_l7_industry_targets():
         if name and pct > 0:
             out[name] = pct
     return out
+
+
+def fetch_l7_categories():
+    """Returns {type: {family: pct}} from CF managed rules categories, or None on failure."""
+    result = cf_get('/attacks/layer7/summary/managed_rules_categories', {'dateRange': '1d'})
+    raw = result.get('summary_0', {})
+    by_type = {}
+    for key, val in raw.items():
+        info = L7_CAT_MAP.get(key)
+        if not info:
+            continue
+        mtype, family = info
+        try:
+            pct = float(val)
+        except (TypeError, ValueError):
+            continue
+        if pct > 0:
+            by_type.setdefault(mtype, {})[family] = pct
+    return by_type if by_type else None
 
 
 def fetch_bgp_hijacks():
@@ -483,9 +517,30 @@ def main():
     except Exception as e:
         print(f'  BGP hijacks unavailable: {e}')
 
+    # ── L7 attack category breakdown → per-type event generation ─────────
+    print('Fetching L7 attack categories...')
+    l7_cats = None
+    try:
+        l7_cats = fetch_l7_categories()
+        if l7_cats:
+            print(f'  {len(l7_cats)} types: {", ".join(l7_cats.keys())}')
+        else:
+            print('  No category data returned, falling back to exploit')
+    except Exception as e:
+        print(f'  L7 categories unavailable: {e}')
+
     # ── Generate weighted events ──────────────────────────────────────
-    l3 = generate_events(l3_origins, l3_targets, 'ddos',    l3_vectors, 900)
-    l7 = generate_events(l7_origins, l7_targets, 'exploit', l7_methods, 600)
+    l3 = generate_events(l3_origins, l3_targets, 'ddos', l3_vectors, 900)
+
+    l7 = []
+    if l7_cats and l7_origins and l7_targets:
+        total_pct = sum(sum(f.values()) for f in l7_cats.values()) or 1
+        for mtype, families in l7_cats.items():
+            n = max(1, round(600 * sum(families.values()) / total_pct))
+            l7.extend(generate_events(l7_origins, l7_targets, mtype, families, n))
+    else:
+        l7 = generate_events(l7_origins, l7_targets, 'exploit', l7_methods, 600)
+
     events = l3 + l7 + bgp_events
     random.shuffle(events)
 
