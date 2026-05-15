@@ -43,14 +43,6 @@
     AzimuthMap.addArc(attack);
   }
 
-  /* ── Filter buttons ─────────────────────────────────────────── */
-  document.getElementById('filter-bar').addEventListener('click', e => {
-    const btn = e.target.closest('.filter-btn');
-    if (!btn) return;
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    AzimuthFeed.setFilter(btn.dataset.f);
-  });
 
   /* ── Map control buttons ────────────────────────────────────── */
   document.getElementById('btn-arcs').addEventListener('click', function () {
@@ -209,14 +201,6 @@
 
   window.AzimuthDrawer = AzimuthDrawer;
 
-  /* ── Search wire-up ─────────────────────────────────────────── */
-  const searchInput = document.getElementById('feed-search');
-  const searchClear = document.getElementById('search-clear');
-  searchInput.addEventListener('input', () => AzimuthFeed.setSearch(searchInput.value));
-  searchClear.addEventListener('click', () => {
-    searchInput.value = '';
-    AzimuthFeed.setSearch('');
-  });
 
   /* ── Keyboard Shortcuts Modal ───────────────────────────────── */
   const modal = document.getElementById('shortcuts-modal');
@@ -526,15 +510,6 @@
       const meta = await res.json();
       renderAttackVectors(meta);
       renderIndustries(meta);
-      // Update BGP count in intel popup if it's open
-      const bgpEl = document.getElementById('ipc-cf-bgp');
-      const bgpDot = document.getElementById('ipr-cf-bgp')?.querySelector('.ip-dot');
-      if (bgpEl) {
-        const n = meta.bgp_count || 0;
-        bgpEl.textContent = n > 0 ? `${n} events` : 'none';
-        bgpEl.className = 'ip-count' + (n === 0 ? ' inactive' : '');
-      }
-      if (bgpDot) bgpDot.classList.toggle('active', (meta.bgp_count || 0) > 0);
     } catch (_) {}
   }
 
