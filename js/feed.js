@@ -49,9 +49,11 @@ window.AzimuthFeed = (() => {
     if (feedItems.length > MAX_FEED) feedItems.pop();
 
     renderFeed(true);
-    renderStats();
-    renderLeaderboard(attackerMap, 'attackers', 'att-bar',          'att-count');
-    renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar',  'att-count tgt-count');
+    if (countStats) {
+      renderStats();
+      renderLeaderboard(attackerMap, 'attackers', 'att-bar',         'att-count');
+      renderLeaderboard(targetMap,   'targets',   'att-bar tgt-bar', 'att-count tgt-count');
+    }
   }
 
   function buildFeedItem(item) {
@@ -83,20 +85,23 @@ window.AzimuthFeed = (() => {
   }
 
   /* ── Smooth scroll drive ────────────────────────────────────── */
-  let _scrollRaf = null;
-  let _scrollTs  = null;
-  let _scrollRate = 0; // px per ms
+  let _cachedItemH = 0;
+  let _scrollPos   = 0;
+  let _scrollRaf   = null;
+  let _scrollTs    = null;
+  let _scrollRate  = 0;
 
   function driveScroll(list) {
     if (_scrollRaf) return;
     _scrollTs = null;
     function step(ts) {
       if (_scrollTs === null) { _scrollTs = ts; _scrollRaf = requestAnimationFrame(step); return; }
-      const dt = ts - _scrollTs;
+      const dt = Math.min(ts - _scrollTs, 50); // clamp for tab-switch spikes
       _scrollTs = ts;
-      list.scrollTop = Math.max(0, list.scrollTop - dt * _scrollRate);
-      if (list.scrollTop > 0) { _scrollRaf = requestAnimationFrame(step); }
-      else                    { _scrollRaf = null; }
+      _scrollPos = Math.max(0, _scrollPos - dt * _scrollRate);
+      list.scrollTop = _scrollPos;
+      if (_scrollPos > 0) { _scrollRaf = requestAnimationFrame(step); }
+      else                { _scrollPos = 0; _scrollRaf = null; }
     }
     _scrollRaf = requestAnimationFrame(step);
   }
@@ -107,9 +112,10 @@ window.AzimuthFeed = (() => {
     if (isNewItem && feedItems.length > 0) {
       const el = buildFeedItem(feedItems[0]);
       list.insertBefore(el, list.firstChild);
-      const itemH = el.offsetHeight || 52;
-      list.scrollTop += itemH;
-      _scrollRate = itemH / 330; // drain in ~330ms — just under the spawn interval
+      if (!_cachedItemH) _cachedItemH = el.offsetHeight || 52; // measure once
+      _scrollPos += _cachedItemH;
+      list.scrollTop = _scrollPos;
+      _scrollRate = _cachedItemH / 330; // drain in ~330ms
       driveScroll(list);
       while (list.children.length > 35) list.lastChild.remove();
       return;
@@ -117,6 +123,7 @@ window.AzimuthFeed = (() => {
 
     // Full rebuild
     list.innerHTML = '';
+    _scrollPos = 0;
     feedItems.slice(0, 35).forEach(item => list.appendChild(buildFeedItem(item)));
   }
 
