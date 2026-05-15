@@ -606,6 +606,35 @@ html, body {
   border-radius: 2px;
 }
 
+/* Attack Vectors + Targeted Industries panels */
+#attack-vectors,
+#targeted-industries {
+  padding: 0 14px 10px;
+  flex-shrink: 0;
+}
+.av-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.av-label {
+  font-size: 10px;
+  color: var(--text2);
+  min-width: 120px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.av-pct {
+  font-size: 10px;
+  color: var(--text2);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── Theater / Focus mode ──────────────────────────────────────── */
 #left, #right { min-width: 0; }
 #app { transition: grid-template-columns 0.3s ease; }

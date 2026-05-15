@@ -81,6 +81,12 @@
             <span class="ip-tag">Exploit</span>
             <span class="ip-count inactive" id="ipc-cf-l7">—</span>
           </div>
+          <div class="ip-row" id="ipr-cf-bgp">
+            <span class="ip-dot"></span>
+            <span class="ip-name">BGP Hijacks</span>
+            <span class="ip-tag">Routing</span>
+            <span class="ip-count inactive" id="ipc-cf-bgp">—</span>
+          </div>
           <div class="ip-updated" id="ipc-updated"></div>
         </div>
       </div>
@@ -232,6 +238,18 @@
         <div class="timeline-label">Activity — 30 min</div>
         <canvas id="timeline-canvas"></canvas>
       </div>
+
+      <div class="panel-header panel-header-split">
+        <span class="panel-title">Attack Vectors</span>
+        <span class="panel-title-sub" id="av-layer-label">L3 + L7</span>
+      </div>
+      <div id="attack-vectors"><div class="d-empty">Loading…</div></div>
+
+      <div class="panel-header panel-header-split" id="industry-header" style="display:none">
+        <span class="panel-title">Targeted Industries</span>
+        <span class="panel-title-sub">L7 HTTP</span>
+      </div>
+      <div id="targeted-industries"></div>
 
     </aside>
 

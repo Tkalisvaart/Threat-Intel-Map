@@ -235,6 +235,7 @@
     const rows = [
       { key: 'cf-l3', skey: 'cf_l3' },
       { key: 'cf-l7', skey: 'cf_l7' },
+      // BGP count is populated by pollCFMeta, not AZIMUTH_SOURCES
     ];
 
     rows.forEach(({ key, skey }) => {
@@ -522,6 +523,78 @@
 
   pollRealFeed();
   setInterval(pollRealFeed, 60_000);
+
+  /* ── Cloudflare meta (vectors, industries, BGP count) ──────────── */
+  let _cfMetaLastModified = null;
+
+  function renderAttackVectors(meta) {
+    const el = document.getElementById('attack-vectors');
+    if (!el) return;
+
+    const vectors = { ...(meta.l3_vectors || {}), ...(meta.l7_methods || {}) };
+    const entries = Object.entries(vectors).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!entries.length) { el.innerHTML = '<div class="d-empty">—</div>'; return; }
+
+    const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
+    el.innerHTML = entries.map(([name, val]) => {
+      const pct = Math.round(val / total * 100);
+      const isL7 = name.startsWith('HTTP');
+      const color = isL7 ? 'var(--amber)' : 'var(--accent2)';
+      return `<div class="av-row">
+        <span class="av-label" title="${name}">${name}</span>
+        <div class="bd-track"><div class="bd-fill" style="width:${pct}%;background:${color}"></div></div>
+        <span class="av-pct">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+
+  function renderIndustries(meta) {
+    const el  = document.getElementById('targeted-industries');
+    const hdr = document.getElementById('industry-header');
+    if (!el) return;
+
+    const industries = meta.l7_industries || {};
+    const entries    = Object.entries(industries).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    if (!entries.length) { if (hdr) hdr.style.display = 'none'; el.innerHTML = ''; return; }
+
+    if (hdr) hdr.style.display = '';
+    const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
+    el.innerHTML = entries.map(([name, val]) => {
+      const pct = Math.round(val / total * 100);
+      return `<div class="av-row">
+        <span class="av-label" title="${name}">${name}</span>
+        <div class="bd-track"><div class="bd-fill" style="width:${pct}%;background:var(--purple)"></div></div>
+        <span class="av-pct">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+
+  async function pollCFMeta() {
+    try {
+      const headers = {};
+      if (_cfMetaLastModified) headers['If-Modified-Since'] = _cfMetaLastModified;
+      const res = await fetch('./data/cf_meta.json', { cache: 'no-cache', headers });
+      if (res.status === 304) return;
+      if (!res.ok) return;
+      const lm = res.headers.get('Last-Modified');
+      if (lm) _cfMetaLastModified = lm;
+      const meta = await res.json();
+      renderAttackVectors(meta);
+      renderIndustries(meta);
+      // Update BGP count in intel popup if it's open
+      const bgpEl = document.getElementById('ipc-cf-bgp');
+      const bgpDot = document.getElementById('ipr-cf-bgp')?.querySelector('.ip-dot');
+      if (bgpEl) {
+        const n = meta.bgp_count || 0;
+        bgpEl.textContent = n > 0 ? `${n} events` : 'none';
+        bgpEl.className = 'ip-count' + (n === 0 ? ' inactive' : '');
+      }
+      if (bgpDot) bgpDot.classList.toggle('active', (meta.bgp_count || 0) > 0);
+    } catch (_) {}
+  }
+
+  pollCFMeta();
+  setInterval(pollCFMeta, 60_000);
   // --- END REAL CTI FEED ---
 
 })();

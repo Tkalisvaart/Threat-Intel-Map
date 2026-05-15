@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Fetch attack data from Cloudflare Radar API and write data/iocs.json.
+Fetch attack data from Cloudflare Radar API and write data/iocs.json + data/cf_meta.json.
 Run by GitHub Actions on a schedule.
 """
 import json
 import os
 import random
+import time
 import urllib.request
 import urllib.parse
 from pathlib import Path
 
 _ROOT      = Path(__file__).parent.parent
 _IOCS_FILE = _ROOT / 'data' / 'iocs.json'
+_META_FILE = _ROOT / 'data' / 'cf_meta.json'
 
 CF_TOKEN = os.environ.get('CF_TOKEN', '')
 CF_BASE  = 'https://api.cloudflare.com/client/v4/radar'
@@ -220,6 +222,23 @@ CENTROIDS = {
     'Fiji':                (-17.71,  178.07),
 }
 
+# Human-readable labels for CF Radar vector/protocol keys
+L3_VECTOR_LABELS = {
+    'UDP_FLOOD':           'UDP Flood',
+    'SYN_FLOOD':           'SYN Flood',
+    'ACK_FLOOD':           'ACK Flood',
+    'TCP_RESET_FLOOD':     'TCP Reset Flood',
+    'ICMP_FLOOD':          'ICMP Flood',
+    'GRE_FLOOD':           'GRE Flood',
+    'DNS_AMPLIFICATION':   'DNS Amplification',
+    'NTP_AMPLIFICATION':   'NTP Amplification',
+    'SSDP_AMPLIFICATION':  'SSDP Amplification',
+    'MEMCACHED_AMPLIFICATION': 'Memcached Amp',
+    'CLDAP_AMPLIFICATION': 'CLDAP Amplification',
+    'ESP':                 'ESP Flood',
+    'UNKNOWN':             'Unknown Vector',
+}
+
 
 def cf_get(path, params=None):
     url = CF_BASE + path
@@ -233,7 +252,7 @@ def cf_get(path, params=None):
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read())
     if not data.get('success'):
-        raise RuntimeError(f'Cloudflare API error: {data.get("errors")}')
+        raise RuntimeError(f'{data.get("errors")}')
     return data['result']
 
 
@@ -253,6 +272,21 @@ def _parse_locations(top_list, iso_key):
     return out
 
 
+def _parse_summary(summary_dict, label_map=None):
+    """Parse a CF summary_0 dict → {label: float_pct}, skipping NONE/UNKNOWN if data exists."""
+    out = {}
+    for key, val in summary_dict.items():
+        try:
+            pct = float(val)
+        except (TypeError, ValueError):
+            continue
+        if pct <= 0:
+            continue
+        label = (label_map or {}).get(key, key.replace('_', ' ').title())
+        out[label] = pct
+    return out
+
+
 def fetch_l3():
     origin_r = cf_get('/attacks/layer3/top/locations/origin', {'limit': 20, 'dateRange': '1d'})
     target_r = cf_get('/attacks/layer3/top/locations/target', {'limit': 20, 'dateRange': '1d'})
@@ -269,19 +303,105 @@ def fetch_l7():
     return origins, targets
 
 
-def generate_events(origins, targets, mtype, family, n):
-    if not origins or not targets:
+def fetch_l3_vectors():
+    """L3 attack vector breakdown — returns {label: pct} dict."""
+    result = cf_get('/attacks/layer3/summary/vector', {'dateRange': '1d'})
+    raw = result.get('summary_0', {})
+    return _parse_summary(raw, L3_VECTOR_LABELS)
+
+
+def fetch_l3_protocols():
+    """L3 protocol breakdown — returns {label: pct} dict."""
+    result = cf_get('/attacks/layer3/summary/protocol', {'dateRange': '1d'})
+    raw = result.get('summary_0', {})
+    labels = {'UDP': 'UDP', 'TCP': 'TCP', 'ICMP': 'ICMP', 'GRE': 'GRE'}
+    return _parse_summary(raw, labels)
+
+
+def fetch_l7_methods():
+    """L7 HTTP method breakdown — returns {label: pct} dict."""
+    result = cf_get('/attacks/layer7/summary/http_method', {'dateRange': '1d'})
+    raw = result.get('summary_0', {})
+    out = {}
+    for method, val in raw.items():
+        try:
+            pct = float(val)
+        except (TypeError, ValueError):
+            continue
+        if pct > 0:
+            out[f'HTTP {method} Flood'] = pct
+    return out
+
+
+def fetch_l7_industry_targets():
+    """L7 top targeted industries — returns {label: pct} dict."""
+    result = cf_get('/attacks/layer7/top/industry', {'limit': 10, 'dateRange': '1d'})
+    out = {}
+    for row in result.get('top_0', []):
+        name = row.get('name') or row.get('value') or ''
+        try:
+            pct = float(row.get('value', 0))
+        except (TypeError, ValueError):
+            pct = 0
+        # Sometimes 'name' and 'value' are swapped — find the string key
+        for k, v in row.items():
+            if isinstance(v, str) and not v.replace('.', '').isdigit():
+                name = v
+                break
+        if name and pct > 0:
+            out[name] = pct
+    return out
+
+
+def fetch_bgp_hijacks():
+    """Fetch recent BGP hijack events and map to attack events."""
+    result  = cf_get('/bgp/hijacks/events', {'dateRange': '7d', 'perPage': 50, 'sortBy': 'TIME', 'sortOrder': 'DESC'})
+    raw     = result.get('events', [])
+    events  = []
+    for ev in raw:
+        hijackers = ev.get('hijackerAsns', [])
+        origins   = ev.get('originAsns', [])
+        if not hijackers or not origins:
+            continue
+        h_cc = (hijackers[0].get('countryCode') or '').upper()
+        o_cc = (origins[0].get('countryCode')   or '').upper()
+        src  = ISO_TO_COUNTRY.get(h_cc)
+        tgt  = ISO_TO_COUNTRY.get(o_cc)
+        if not src or not tgt or src == tgt:
+            continue
+        lat, lon = CENTROIDS.get(src, (0.0, 0.0))
+        asn_name = hijackers[0].get('asnName', '')
+        events.append({
+            'src': src, 'tgt': tgt, 'type': 'exploit',
+            'ip': '', 'family': 'BGP Hijack',
+            'first_seen': (ev.get('eventDatetime') or '')[:10],
+            'source': 'cloudflare',
+            'lat': lat, 'lon': lon,
+            'city': '', 'asn': asn_name,
+        })
+    return events
+
+
+def generate_events(origins, targets, mtype, families, n):
+    """
+    Generate n weighted events from origin/target country distributions.
+    families: dict of {name: weight} for realistic family name assignment.
+    """
+    if not origins or not targets or not families:
         return []
     src_c, src_w = zip(*origins)
     tgt_c, tgt_w = zip(*targets)
+    fam_names    = list(families.keys())
+    fam_weights  = list(families.values())
     events = []
     for _ in range(n):
         src = random.choices(src_c, weights=src_w)[0]
         pairs = [(c, w) for c, w in zip(tgt_c, tgt_w) if c != src]
         if not pairs:
             continue
-        tc, tw = zip(*pairs)
-        tgt = random.choices(tc, weights=tw)[0]
+        tc, tw  = zip(*pairs)
+        tgt     = random.choices(tc, weights=tw)[0]
+        family  = random.choices(fam_names, weights=fam_weights)[0]
         lat, lon = CENTROIDS.get(src, (0.0, 0.0))
         events.append({
             'src': src, 'tgt': tgt, 'type': mtype,
@@ -300,29 +420,95 @@ def main():
 
     events = []
 
-    print('Fetching Cloudflare Radar L3 (Network DDoS)...')
+    # ── L3 origin/target distributions ───────────────────────────────
+    print('Fetching L3 top locations...')
+    l3_origins, l3_targets = [], []
     try:
         l3_origins, l3_targets = fetch_l3()
-        l3 = generate_events(l3_origins, l3_targets, 'ddos', 'Network DDoS', 900)
-        events.extend(l3)
-        print(f'  {len(l3)} events from {len(l3_origins)} origins → {len(l3_targets)} targets')
+        print(f'  {len(l3_origins)} origins, {len(l3_targets)} targets')
     except Exception as e:
-        print(f'  L3 failed: {e}')
+        print(f'  L3 locations failed: {e}')
 
-    print('Fetching Cloudflare Radar L7 (HTTP Attacks)...')
+    # ── L7 origin/target distributions ───────────────────────────────
+    print('Fetching L7 top locations...')
+    l7_origins, l7_targets = [], []
     try:
         l7_origins, l7_targets = fetch_l7()
-        l7 = generate_events(l7_origins, l7_targets, 'exploit', 'HTTP Flood', 600)
-        events.extend(l7)
-        print(f'  {len(l7)} events from {len(l7_origins)} origins → {len(l7_targets)} targets')
+        print(f'  {len(l7_origins)} origins, {len(l7_targets)} targets')
     except Exception as e:
-        print(f'  L7 failed: {e}')
+        print(f'  L7 locations failed: {e}')
 
+    # ── L3 vector breakdown → family names for events ─────────────────
+    print('Fetching L3 attack vectors...')
+    l3_vectors = {'Network DDoS': 100.0}
+    try:
+        l3_vectors = fetch_l3_vectors() or l3_vectors
+        print(f'  {len(l3_vectors)} vectors: {", ".join(l3_vectors.keys())}')
+    except Exception as e:
+        print(f'  L3 vectors unavailable: {e}')
+
+    # ── L3 protocol breakdown (for meta display) ──────────────────────
+    print('Fetching L3 protocols...')
+    l3_protocols = {}
+    try:
+        l3_protocols = fetch_l3_protocols()
+        print(f'  {l3_protocols}')
+    except Exception as e:
+        print(f'  L3 protocols unavailable: {e}')
+
+    # ── L7 method breakdown → family names for events ─────────────────
+    print('Fetching L7 HTTP methods...')
+    l7_methods = {'HTTP Flood': 100.0}
+    try:
+        l7_methods = fetch_l7_methods() or l7_methods
+        print(f'  {len(l7_methods)} methods: {", ".join(l7_methods.keys())}')
+    except Exception as e:
+        print(f'  L7 methods unavailable: {e}')
+
+    # ── L7 industry targets (meta only) ───────────────────────────────
+    print('Fetching L7 targeted industries...')
+    l7_industries = {}
+    try:
+        l7_industries = fetch_l7_industry_targets()
+        print(f'  {len(l7_industries)} industries')
+    except Exception as e:
+        print(f'  L7 industries unavailable: {e}')
+
+    # ── BGP hijack events ─────────────────────────────────────────────
+    print('Fetching BGP hijack events...')
+    bgp_events = []
+    try:
+        bgp_events = fetch_bgp_hijacks()
+        print(f'  {len(bgp_events)} hijack events')
+    except Exception as e:
+        print(f'  BGP hijacks unavailable: {e}')
+
+    # ── Generate weighted events ──────────────────────────────────────
+    l3 = generate_events(l3_origins, l3_targets, 'ddos',    l3_vectors, 900)
+    l7 = generate_events(l7_origins, l7_targets, 'exploit', l7_methods, 600)
+    events = l3 + l7 + bgp_events
     random.shuffle(events)
 
+    print(f'Total: {len(l3)} L3 + {len(l7)} L7 + {len(bgp_events)} BGP = {len(events)} events')
+
+    # ── Write iocs.json ───────────────────────────────────────────────
     _IOCS_FILE.parent.mkdir(exist_ok=True)
     _IOCS_FILE.write_text(json.dumps(events, separators=(',', ':')))
     print(f'Wrote {len(events)} events → {_IOCS_FILE}')
+
+    # ── Write cf_meta.json ────────────────────────────────────────────
+    meta = {
+        'l3_vectors':    l3_vectors,
+        'l3_protocols':  l3_protocols,
+        'l7_methods':    l7_methods,
+        'l7_industries': l7_industries,
+        'bgp_count':     len(bgp_events),
+        'l3_count':      len(l3),
+        'l7_count':      len(l7),
+        'updatedAt':     time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+    }
+    _META_FILE.write_text(json.dumps(meta, indent=2))
+    print(f'Wrote metadata → {_META_FILE}')
 
 
 if __name__ == '__main__':
